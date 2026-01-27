@@ -17,7 +17,19 @@ pub async fn search_prs(client: &Octocrab, query: &str) -> Result<Vec<PullReques
             .issues_and_pull_requests(query)
             .send()
             .await
-            .context("Failed to search pull requests")
+            .map_err(|e| {
+                // Extract useful error info from octocrab error
+                let error_str = format!("{:?}", e);
+                if error_str.contains("do not have permission") || error_str.contains("resources do not exist") {
+                    anyhow!("Repository not found or no access. Check repo name and token permissions (needs 'repo' scope for private repos).")
+                } else if error_str.contains("401") || error_str.contains("Bad credentials") {
+                    anyhow!("Authentication failed. Your GitHub token may be invalid or expired.")
+                } else if error_str.contains("rate limit") || error_str.contains("403") {
+                    anyhow!("GitHub API rate limit exceeded. Wait a few minutes and try again.")
+                } else {
+                    anyhow!("GitHub API error: {}", e)
+                }
+            })
     })
     .await?;
 

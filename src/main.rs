@@ -26,6 +26,11 @@ struct Cli {
 
 #[tokio::main]
 async fn main() {
+    // Install rustls crypto provider (required for rustls 0.23+)
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+
     let cli = Cli::parse();
     let start_time = Instant::now();
 
