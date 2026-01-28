@@ -1,6 +1,7 @@
 use std::io::IsTerminal;
 use chrono::Duration;
 use owo_colors::OwoColorize;
+use terminal_size::{Width, terminal_size};
 
 use crate::github::types::PullRequest;
 
@@ -75,6 +76,114 @@ pub fn format_pr_detail(pr: &PullRequest, use_colors: bool) -> String {
 /// Check if stdout is a TTY (for auto-detecting color support)
 pub fn should_use_colors() -> bool {
     std::io::stdout().is_terminal()
+}
+
+/// Format a score in compact notation (1.5k, 2.3M, 847)
+/// If incomplete is true, appends asterisk to indicate partial scoring
+pub fn format_score(score: f64, incomplete: bool) -> String {
+    let formatted = if score >= 1_000_000.0 {
+        format!("{:.1}M", score / 1_000_000.0)
+    } else if score >= 1_000.0 {
+        format!("{:.1}k", score / 1_000.0)
+    } else {
+        format!("{:.0}", score)
+    };
+
+    // Trim trailing .0 (e.g., "1.0k" -> "1k")
+    let trimmed = formatted
+        .replace(".0M", "M")
+        .replace(".0k", "k");
+
+    if incomplete {
+        format!("{}*", trimmed)
+    } else {
+        trimmed
+    }
+}
+
+/// A PR with its calculated score for display
+pub struct ScoredPr<'a> {
+    pub pr: &'a PullRequest,
+    pub score: f64,
+    pub incomplete: bool,
+}
+
+/// Get terminal width, defaulting to None for pipes (unlimited)
+fn get_terminal_width() -> Option<usize> {
+    terminal_size().map(|(Width(w), _)| w as usize)
+}
+
+/// Truncate title to fit available width, accounting for Unicode
+fn truncate_title(title: &str, max_width: usize) -> String {
+    let chars: Vec<char> = title.chars().collect();
+    if chars.len() <= max_width {
+        title.to_string()
+    } else if max_width > 3 {
+        format!("{}...", chars[..max_width - 3].iter().collect::<String>())
+    } else {
+        chars[..max_width].iter().collect()
+    }
+}
+
+/// Format PRs as scored table with columns: Score, Title, URL
+/// No headers (minimal format per CONTEXT.md)
+/// Score column is right-aligned, 7 chars wide (fits "9999.9M")
+pub fn format_scored_table(prs: &[ScoredPr], use_colors: bool) -> String {
+    if prs.is_empty() {
+        return "No pull requests found.".to_string();
+    }
+
+    let term_width = get_terminal_width();
+
+    // Score column: 7 chars + 2 spaces = 9
+    // URL: varies, ~50 chars typical for GitHub
+    // Leave rest for title
+    let score_width = 7;
+    let separator = "  ";
+
+    prs.iter()
+        .map(|scored| {
+            let score_str = format_score(scored.score, scored.incomplete);
+            let score_padded = format!("{:>width$}", score_str, width = score_width);
+
+            // Calculate available title width
+            let url_len = scored.pr.url.len();
+            let fixed_width = score_width + separator.len() * 2 + url_len;
+
+            let title = if let Some(width) = term_width {
+                if width > fixed_width + 10 {
+                    truncate_title(&scored.pr.title, width - fixed_width)
+                } else {
+                    // Very narrow terminal, show truncated
+                    truncate_title(&scored.pr.title, 20)
+                }
+            } else {
+                // No terminal (pipe), don't truncate
+                scored.pr.title.clone()
+            };
+
+            if use_colors {
+                format!(
+                    "{}{}{}{}{}",
+                    score_padded.bold(),
+                    separator,
+                    title,
+                    separator,
+                    scored.pr.url.underline()
+                )
+            } else {
+                format!(
+                    "{}{}{}{}{}",
+                    score_padded,
+                    separator,
+                    title,
+                    separator,
+                    scored.pr.url
+                )
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Format a duration into a human-readable age string
@@ -177,5 +286,139 @@ mod tests {
     fn test_format_age_now() {
         let duration = Duration::seconds(30);
         assert_eq!(format_age(duration), "now");
+    }
+
+    // format_score tests
+    #[test]
+    fn test_format_score_small() {
+        assert_eq!(format_score(500.0, false), "500");
+    }
+
+    #[test]
+    fn test_format_score_zero() {
+        assert_eq!(format_score(0.0, false), "0");
+    }
+
+    #[test]
+    fn test_format_score_thousand_exact() {
+        assert_eq!(format_score(1000.0, false), "1k");
+    }
+
+    #[test]
+    fn test_format_score_thousand_decimal() {
+        assert_eq!(format_score(1500.0, false), "1.5k");
+    }
+
+    #[test]
+    fn test_format_score_million_exact() {
+        assert_eq!(format_score(1_000_000.0, false), "1M");
+    }
+
+    #[test]
+    fn test_format_score_million_decimal() {
+        assert_eq!(format_score(2_300_000.0, false), "2.3M");
+    }
+
+    #[test]
+    fn test_format_score_with_incomplete() {
+        assert_eq!(format_score(1500.0, true), "1.5k*");
+    }
+
+    #[test]
+    fn test_format_score_small_with_incomplete() {
+        assert_eq!(format_score(847.0, true), "847*");
+    }
+
+    // truncate_title tests
+    #[test]
+    fn test_truncate_title_short() {
+        assert_eq!(truncate_title("Short title", 20), "Short title");
+    }
+
+    #[test]
+    fn test_truncate_title_exact() {
+        assert_eq!(truncate_title("Exact", 5), "Exact");
+    }
+
+    #[test]
+    fn test_truncate_title_long() {
+        assert_eq!(truncate_title("This is a very long title", 15), "This is a ve...");
+    }
+
+    #[test]
+    fn test_truncate_title_unicode() {
+        // Unicode characters should be handled correctly (by char, not by byte)
+        assert_eq!(truncate_title("Hello cafe", 10), "Hello cafe");
+        assert_eq!(truncate_title("Hello cafe world", 10), "Hello c...");
+    }
+
+    #[test]
+    fn test_truncate_title_very_narrow() {
+        // Very narrow case (max_width <= 3)
+        assert_eq!(truncate_title("Hello world", 3), "Hel");
+    }
+
+    // format_scored_table tests
+    #[test]
+    fn test_format_scored_table_empty() {
+        let prs: Vec<ScoredPr> = vec![];
+        let result = format_scored_table(&prs, false);
+        assert_eq!(result, "No pull requests found.");
+    }
+
+    #[test]
+    fn test_format_scored_table_single() {
+        let pr = sample_pr();
+        let scored_prs = vec![ScoredPr {
+            pr: &pr,
+            score: 1500.0,
+            incomplete: false,
+        }];
+        let result = format_scored_table(&scored_prs, false);
+        // Score should be right-aligned in 7-char column
+        assert!(result.contains("1.5k"));
+        assert!(result.contains("Fix login bug"));
+        assert!(result.contains("https://github.com/owner/repo/pull/123"));
+    }
+
+    #[test]
+    fn test_format_scored_table_incomplete() {
+        let pr = sample_pr();
+        let scored_prs = vec![ScoredPr {
+            pr: &pr,
+            score: 847.0,
+            incomplete: true,
+        }];
+        let result = format_scored_table(&scored_prs, false);
+        assert!(result.contains("847*"));
+    }
+
+    #[test]
+    fn test_format_scored_table_multiple() {
+        let pr1 = sample_pr();
+        let mut pr2 = sample_pr();
+        pr2.title = "Add new feature".to_string();
+        pr2.number = 456;
+        pr2.url = "https://github.com/owner/repo/pull/456".to_string();
+
+        let scored_prs = vec![
+            ScoredPr {
+                pr: &pr1,
+                score: 2000.0,
+                incomplete: false,
+            },
+            ScoredPr {
+                pr: &pr2,
+                score: 500.0,
+                incomplete: false,
+            },
+        ];
+        let result = format_scored_table(&scored_prs, false);
+        let lines: Vec<&str> = result.lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains("2k"));
+        assert!(lines[0].contains("Fix login bug"));
+        assert!(lines[1].contains("500"));
+        assert!(lines[1].contains("Add new feature"));
     }
 }
