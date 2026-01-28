@@ -56,6 +56,16 @@ async fn main() {
         }
     }
 
+    // Validate scoring config at startup
+    let effective_scoring = config.scoring.clone().unwrap_or_default();
+    if let Err(errors) = pr_bro::scoring::validate_scoring(&effective_scoring) {
+        eprintln!("Scoring config errors:");
+        for error in errors {
+            eprintln!("  - {}", error);
+        }
+        std::process::exit(EXIT_CONFIG);
+    }
+
     // Check if any queries are configured
     if config.queries.is_empty() {
         eprintln!("No queries configured in config file.");
@@ -132,24 +142,55 @@ async fn main() {
         std::process::exit(EXIT_NETWORK);
     }
 
+    // Calculate scores for all PRs
+    let mut scored_prs: Vec<_> = all_prs
+        .into_iter()
+        .map(|pr| {
+            let result = pr_bro::scoring::calculate_score(&pr, &effective_scoring);
+            (pr, result)
+        })
+        .collect();
+
+    // Sort by score descending, then by age ascending (older first for ties)
+    scored_prs.sort_by(|a, b| {
+        // Primary: score descending
+        let score_cmp = b.1.score.partial_cmp(&a.1.score).unwrap_or(std::cmp::Ordering::Equal);
+        if score_cmp != std::cmp::Ordering::Equal {
+            return score_cmp;
+        }
+        // Tie-breaker: age ascending (older first = smaller created_at)
+        a.0.created_at.cmp(&b.0.created_at)
+    });
+
+    // Build ScoredPr references for formatter
+    let scored_refs: Vec<pr_bro::output::ScoredPr> = scored_prs
+        .iter()
+        .map(|(pr, result)| pr_bro::output::ScoredPr {
+            pr,
+            score: result.score,
+            incomplete: result.incomplete,
+        })
+        .collect();
+
     // Output results
     let use_colors = pr_bro::output::should_use_colors();
 
-    if cli.verbose && !all_prs.is_empty() {
-        // Verbose mode: detailed output
-        for pr in &all_prs {
-            println!("{}", pr_bro::output::format_pr_detail(pr, use_colors));
+    if cli.verbose && !scored_refs.is_empty() {
+        // Verbose mode: detailed output with scores
+        for scored in &scored_refs {
+            println!("{}", pr_bro::output::format_pr_detail(scored.pr, use_colors));
+            println!("  Score: {}", pr_bro::output::format_score(scored.score, scored.incomplete));
             println!();
         }
     } else {
-        // Normal mode: one line per PR
-        let output = pr_bro::output::format_pr_list(&all_prs, use_colors);
+        // Normal mode: scored table
+        let output = pr_bro::output::format_scored_table(&scored_refs, use_colors);
         println!("{}", output);
     }
 
     if cli.verbose {
         eprintln!();
-        eprintln!("Total: {} PRs in {:?}", all_prs.len(), start_time.elapsed());
+        eprintln!("Total: {} PRs in {:?}", scored_prs.len(), start_time.elapsed());
     }
 
     std::process::exit(EXIT_SUCCESS);
