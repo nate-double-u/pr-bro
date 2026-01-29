@@ -1,4 +1,5 @@
 use clap::Parser;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -142,8 +143,20 @@ async fn main() {
         std::process::exit(EXIT_NETWORK);
     }
 
+    // Deduplicate PRs by URL (same PR may appear in multiple queries)
+    let mut seen_urls = HashSet::new();
+    let unique_prs: Vec<_> = all_prs
+        .into_iter()
+        .filter(|pr| seen_urls.insert(pr.url.clone()))
+        .collect();
+
+    if cli.verbose {
+        let deduped_count = unique_prs.len();
+        eprintln!("After deduplication: {} unique PRs", deduped_count);
+    }
+
     // Calculate scores for all PRs
-    let mut scored_prs: Vec<_> = all_prs
+    let mut scored_prs: Vec<_> = unique_prs
         .into_iter()
         .map(|pr| {
             let result = pr_bro::scoring::calculate_score(&pr, &effective_scoring);
