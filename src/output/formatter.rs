@@ -125,8 +125,9 @@ fn truncate_title(title: &str, max_width: usize) -> String {
     }
 }
 
-/// Format PRs as scored table with columns: Score, Title, URL
+/// Format PRs as scored table with columns: Index, Score, Title, URL
 /// No headers (minimal format per CONTEXT.md)
+/// Index column: 3 chars (fits "99."), right-aligned
 /// Score column is right-aligned, 7 chars wide (fits "9999.9M")
 pub fn format_scored_table(prs: &[ScoredPr], use_colors: bool) -> String {
     if prs.is_empty() {
@@ -135,20 +136,25 @@ pub fn format_scored_table(prs: &[ScoredPr], use_colors: bool) -> String {
 
     let term_width = get_terminal_width();
 
+    // Index column: 3 chars + 1 space = 4
     // Score column: 7 chars + 2 spaces = 9
     // URL: varies, ~50 chars typical for GitHub
     // Leave rest for title
+    let index_width = 3;
     let score_width = 7;
     let separator = "  ";
 
     prs.iter()
-        .map(|scored| {
+        .enumerate()
+        .map(|(idx, scored)| {
+            // 1-based index, right-aligned with trailing dot
+            let index_str = format!("{:>2}.", idx + 1);
             let score_str = format_score(scored.score, scored.incomplete);
             let score_padded = format!("{:>width$}", score_str, width = score_width);
 
-            // Calculate available title width
+            // Calculate available title width (accounting for index column)
             let url_len = scored.pr.url.len();
-            let fixed_width = score_width + separator.len() * 2 + url_len;
+            let fixed_width = index_width + 1 + score_width + separator.len() * 2 + url_len;
 
             let title = if let Some(width) = term_width {
                 if width > fixed_width + 10 {
@@ -164,7 +170,8 @@ pub fn format_scored_table(prs: &[ScoredPr], use_colors: bool) -> String {
 
             if use_colors {
                 format!(
-                    "{}{}{}{}{}",
+                    "{} {}{}{}{}{}",
+                    index_str.dimmed(),
                     score_padded.bold(),
                     separator,
                     title,
@@ -173,7 +180,8 @@ pub fn format_scored_table(prs: &[ScoredPr], use_colors: bool) -> String {
                 )
             } else {
                 format!(
-                    "{}{}{}{}{}",
+                    "{} {}{}{}{}{}",
+                    index_str,
                     score_padded,
                     separator,
                     title,
@@ -375,6 +383,8 @@ mod tests {
             incomplete: false,
         }];
         let result = format_scored_table(&scored_prs, false);
+        // Index should be 1-based
+        assert!(result.contains(" 1."));
         // Score should be right-aligned in 7-char column
         assert!(result.contains("1.5k"));
         assert!(result.contains("Fix login bug"));
@@ -390,6 +400,7 @@ mod tests {
             incomplete: true,
         }];
         let result = format_scored_table(&scored_prs, false);
+        assert!(result.contains(" 1."));
         assert!(result.contains("847*"));
     }
 
@@ -416,9 +427,27 @@ mod tests {
         let result = format_scored_table(&scored_prs, false);
         let lines: Vec<&str> = result.lines().collect();
         assert_eq!(lines.len(), 2);
+        // Check indices are sequential
+        assert!(lines[0].contains(" 1."));
+        assert!(lines[1].contains(" 2."));
+        // Check scores and titles
         assert!(lines[0].contains("2k"));
         assert!(lines[0].contains("Fix login bug"));
         assert!(lines[1].contains("500"));
         assert!(lines[1].contains("Add new feature"));
+    }
+
+    #[test]
+    fn test_format_scored_table_index_format() {
+        // Verify index format: right-aligned, 1-based, with trailing dot
+        let pr = sample_pr();
+        let scored_prs = vec![ScoredPr {
+            pr: &pr,
+            score: 100.0,
+            incomplete: false,
+        }];
+        let result = format_scored_table(&scored_prs, false);
+        // Should start with " 1." (space for alignment, then index)
+        assert!(result.starts_with(" 1."));
     }
 }
