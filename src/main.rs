@@ -190,35 +190,68 @@ async fn main() {
         a.0.created_at.cmp(&b.0.created_at)
     });
 
-    // Build ScoredPr references for formatter
-    let scored_refs: Vec<pr_bro::output::ScoredPr> = scored_prs
-        .iter()
-        .map(|(pr, result)| pr_bro::output::ScoredPr {
-            pr,
-            score: result.score,
-            incomplete: result.incomplete,
-        })
-        .collect();
+    // Route based on subcommand
+    match command {
+        Commands::List => {
+            // Build ScoredPr references for formatter
+            let scored_refs: Vec<pr_bro::output::ScoredPr> = scored_prs
+                .iter()
+                .map(|(pr, result)| pr_bro::output::ScoredPr {
+                    pr,
+                    score: result.score,
+                    incomplete: result.incomplete,
+                })
+                .collect();
 
-    // Output results
-    let use_colors = pr_bro::output::should_use_colors();
+            // Output results
+            let use_colors = pr_bro::output::should_use_colors();
 
-    if cli.verbose && !scored_refs.is_empty() {
-        // Verbose mode: detailed output with scores
-        for scored in &scored_refs {
-            println!("{}", pr_bro::output::format_pr_detail(scored.pr, use_colors));
-            println!("  Score: {}", pr_bro::output::format_score(scored.score, scored.incomplete));
-            println!();
+            if cli.verbose && !scored_refs.is_empty() {
+                // Verbose mode: detailed output with scores
+                for scored in &scored_refs {
+                    println!(
+                        "{}",
+                        pr_bro::output::format_pr_detail(scored.pr, use_colors)
+                    );
+                    println!(
+                        "  Score: {}",
+                        pr_bro::output::format_score(scored.score, scored.incomplete)
+                    );
+                    println!();
+                }
+            } else {
+                // Normal mode: scored table
+                let output = pr_bro::output::format_scored_table(&scored_refs, use_colors);
+                println!("{}", output);
+            }
+
+            if cli.verbose {
+                eprintln!();
+                eprintln!("Total: {} PRs in {:?}", scored_prs.len(), start_time.elapsed());
+            }
         }
-    } else {
-        // Normal mode: scored table
-        let output = pr_bro::output::format_scored_table(&scored_refs, use_colors);
-        println!("{}", output);
-    }
+        Commands::Open { index } => {
+            // Validate index bounds (1-based)
+            if index < 1 || index > scored_prs.len() {
+                eprintln!(
+                    "Invalid index {}. Must be between 1 and {}.",
+                    index,
+                    scored_prs.len()
+                );
+                std::process::exit(EXIT_CONFIG);
+            }
 
-    if cli.verbose {
-        eprintln!();
-        eprintln!("Total: {} PRs in {:?}", scored_prs.len(), start_time.elapsed());
+            // Get PR at index (convert to 0-based)
+            let (pr, _result) = &scored_prs[index - 1];
+
+            // Open in browser
+            if let Err(e) = pr_bro::browser::open_url(&pr.url) {
+                eprintln!("Failed to open browser: {}", e);
+                std::process::exit(EXIT_NETWORK);
+            }
+
+            println!("Opening PR #{} in browser: {}", pr.number, pr.url);
+        }
     }
 
     std::process::exit(EXIT_SUCCESS);
