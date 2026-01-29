@@ -19,3 +19,4 @@ owo-colors = "4"
 chrono = { version = "0.4", features = ["serde"] }
 terminal_size = "0.4"
 humantime = "2.3"
+webbrowser = "1.0.6"
