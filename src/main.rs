@@ -231,6 +231,12 @@ async fn main() {
             }
         }
         Commands::Open { index } => {
+            // Handle empty result case
+            if scored_prs.is_empty() {
+                eprintln!("No pull requests found. Nothing to open.");
+                std::process::exit(EXIT_SUCCESS);
+            }
+
             // Validate index bounds (1-based)
             if index < 1 || index > scored_prs.len() {
                 eprintln!(
