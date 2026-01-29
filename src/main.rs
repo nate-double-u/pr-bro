@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -11,18 +11,32 @@ const EXIT_NETWORK: i32 = 2;
 const EXIT_RATE_LIMIT: i32 = 3;
 const EXIT_CONFIG: i32 = 4;
 
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// List PRs sorted by priority (default if no subcommand)
+    List,
+    /// Open a PR in browser by its index number
+    Open {
+        /// Index number of the PR to open (1-based, as shown in list)
+        index: usize,
+    },
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "pr-bro")]
 #[command(about = "GitHub PR review prioritization CLI", long_about = None)]
 #[command(version)]
 struct Cli {
     /// Enable verbose logging
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     verbose: bool,
 
     /// Path to config file (defaults to ~/.config/pr-bro/config.yaml)
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     config: Option<String>,
+
+    #[command(subcommand)]
+    command: Option<Commands>,
 }
 
 #[tokio::main]
@@ -33,6 +47,7 @@ async fn main() {
         .expect("Failed to install rustls crypto provider");
 
     let cli = Cli::parse();
+    let command = cli.command.unwrap_or(Commands::List);
     let start_time = Instant::now();
 
     // Load config
