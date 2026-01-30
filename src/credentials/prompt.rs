@@ -1,4 +1,3 @@
-use std::io::{self, Write};
 use anyhow::{Context, Result};
 
 use super::{get_token, store_token, CredentialError};
@@ -9,11 +8,8 @@ pub fn prompt_for_token() -> Result<String> {
     println!("Create one at: https://github.com/settings/tokens");
     println!("Required scopes: repo (for private repos) or public_repo (for public only)");
     println!();
-    print!("Enter token: ");
-    io::stdout().flush()?;
 
-    let mut token = String::new();
-    io::stdin().read_line(&mut token)
+    let token = rpassword::prompt_password_stdout("Enter token: ")
         .context("Failed to read token from stdin")?;
 
     let token = token.trim();
