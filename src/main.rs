@@ -14,10 +14,27 @@ const EXIT_CONFIG: i32 = 4;
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// List PRs sorted by priority (default if no subcommand)
-    List,
+    List {
+        /// Show snoozed PRs instead of active PRs
+        #[arg(long)]
+        show_snoozed: bool,
+    },
     /// Open a PR in browser by its index number
     Open {
         /// Index number of the PR to open (1-based, as shown in list)
+        index: usize,
+    },
+    /// Snooze a PR by its index number
+    Snooze {
+        /// Index number of the PR to snooze (1-based, as shown in list)
+        index: usize,
+        /// Duration to snooze (e.g., "2h", "3d", "1w"). Omit for indefinite.
+        #[arg(long, value_name = "DURATION")]
+        r#for: Option<String>,
+    },
+    /// Unsnooze a PR by its index in the snoozed list
+    Unsnooze {
+        /// Index number of the snoozed PR to unsnooze (1-based, as shown in --show-snoozed list)
         index: usize,
     },
 }
@@ -47,7 +64,7 @@ async fn main() {
         .expect("Failed to install rustls crypto provider");
 
     let cli = Cli::parse();
-    let command = cli.command.unwrap_or(Commands::List);
+    let command = cli.command.unwrap_or(Commands::List { show_snoozed: false });
     let start_time = Instant::now();
 
     // Load config
@@ -81,6 +98,18 @@ async fn main() {
         }
         std::process::exit(EXIT_CONFIG);
     }
+
+    // Load snooze state (before credential setup - no network required)
+    let snooze_path = pr_bro::snooze::get_snooze_path();
+    let mut snooze_state = match pr_bro::snooze::load_snooze_state(&snooze_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Warning: Could not load snooze state: {}", e);
+            pr_bro::snooze::SnoozeState::new()
+        }
+    };
+    // Clean expired snoozes on load
+    snooze_state.clean_expired();
 
     // Check if any queries are configured
     if config.queries.is_empty() {
@@ -170,8 +199,21 @@ async fn main() {
         eprintln!("After deduplication: {} unique PRs", deduped_count);
     }
 
+    // Apply snooze filtering based on command type
+    let use_snoozed_view = matches!(&command, Commands::List { show_snoozed: true } | Commands::Unsnooze { .. });
+    let filtered_prs = if use_snoozed_view {
+        pr_bro::snooze::filter_snoozed_prs(unique_prs, &snooze_state)
+    } else {
+        pr_bro::snooze::filter_active_prs(unique_prs, &snooze_state)
+    };
+
+    if cli.verbose {
+        let filter_type = if use_snoozed_view { "snoozed" } else { "active" };
+        eprintln!("After {} filter: {} PRs", filter_type, filtered_prs.len());
+    }
+
     // Calculate scores for all PRs
-    let mut scored_prs: Vec<_> = unique_prs
+    let mut scored_prs: Vec<_> = filtered_prs
         .into_iter()
         .map(|pr| {
             let result = pr_bro::scoring::calculate_score(&pr, &effective_scoring);
@@ -192,7 +234,7 @@ async fn main() {
 
     // Route based on subcommand
     match command {
-        Commands::List => {
+        Commands::List { show_snoozed: _ } => {
             // Build ScoredPr references for formatter
             let scored_refs: Vec<pr_bro::output::ScoredPr> = scored_prs
                 .iter()
@@ -257,6 +299,67 @@ async fn main() {
             }
 
             println!("Opening PR #{} in browser: {}", pr.number, pr.url);
+        }
+        Commands::Snooze { index, r#for: duration } => {
+            if scored_prs.is_empty() {
+                eprintln!("No pull requests found. Nothing to snooze.");
+                std::process::exit(EXIT_SUCCESS);
+            }
+            if index < 1 || index > scored_prs.len() {
+                eprintln!("Invalid index {}. Must be between 1 and {}.", index, scored_prs.len());
+                std::process::exit(EXIT_CONFIG);
+            }
+
+            let (pr, _) = &scored_prs[index - 1];
+            let snooze_until = if let Some(dur_str) = duration {
+                let std_duration = humantime::parse_duration(&dur_str)
+                    .unwrap_or_else(|_| {
+                        eprintln!("Invalid duration '{}'. Use formats like: 2h, 3d, 1w", dur_str);
+                        std::process::exit(EXIT_CONFIG);
+                    });
+                let chrono_duration = chrono::Duration::from_std(std_duration)
+                    .unwrap_or_else(|_| {
+                        eprintln!("Duration '{}' is too large.", dur_str);
+                        std::process::exit(EXIT_CONFIG);
+                    });
+                Some(chrono::Utc::now() + chrono_duration)
+            } else {
+                None
+            };
+
+            snooze_state.snooze(pr.url.clone(), snooze_until);
+            if let Err(e) = pr_bro::snooze::save_snooze_state(&snooze_path, &snooze_state) {
+                eprintln!("Failed to save snooze state: {}", e);
+                std::process::exit(EXIT_CONFIG);
+            }
+
+            let duration_msg = match snooze_until {
+                Some(until) => format!(" until {}", until.format("%Y-%m-%d %H:%M UTC")),
+                None => " indefinitely".to_string(),
+            };
+            println!("Snoozed PR #{}{}: {}", pr.number, duration_msg, pr.title);
+        }
+        Commands::Unsnooze { index } => {
+            if scored_prs.is_empty() {
+                eprintln!("No snoozed pull requests found. Nothing to unsnooze.");
+                std::process::exit(EXIT_SUCCESS);
+            }
+            if index < 1 || index > scored_prs.len() {
+                eprintln!("Invalid index {}. Must be between 1 and {}.", index, scored_prs.len());
+                std::process::exit(EXIT_CONFIG);
+            }
+
+            let (pr, _) = &scored_prs[index - 1];
+            let removed = snooze_state.unsnooze(&pr.url);
+            if removed {
+                if let Err(e) = pr_bro::snooze::save_snooze_state(&snooze_path, &snooze_state) {
+                    eprintln!("Failed to save snooze state: {}", e);
+                    std::process::exit(EXIT_CONFIG);
+                }
+                println!("Unsnoozed PR #{}: {}", pr.number, pr.title);
+            } else {
+                eprintln!("PR #{} was not snoozed.", pr.number);
+            }
         }
     }
 
