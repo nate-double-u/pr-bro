@@ -25,10 +25,11 @@ pub async fn run_tui(
     let snooze_clone = app.snooze_state.clone();
     let cache_config_clone = app.cache_config.clone();
     let verbose = app.verbose;
+    let auth_username_clone = app.auth_username.clone();
 
     let mut pending_fetch: Option<tokio::task::JoinHandle<_>> = Some(tokio::spawn(async move {
         crate::fetch::fetch_and_score_prs(
-            &client_clone, &config_clone, &snooze_clone, &cache_config_clone, verbose
+            &client_clone, &config_clone, &snooze_clone, &cache_config_clone, verbose, auth_username_clone.as_deref()
         ).await
     }));
     app.is_loading = true;
@@ -71,10 +72,14 @@ pub async fn run_tui(
                                         &app.cache_config,
                                     ) {
                                         Ok((new_client, new_cache_handle)) => {
-                                            client = new_client;
+                                            client = new_client.clone();
                                             if new_cache_handle.is_some() {
                                                 app.cache_handle = new_cache_handle;
                                             }
+
+                                            // Re-fetch authenticated username
+                                            let new_username = new_client.current().user().await.ok().map(|u| u.login);
+                                            app.auth_username = new_username;
 
                                             // Re-init terminal
                                             terminal = ratatui::init();
@@ -129,10 +134,11 @@ pub async fn run_tui(
             let snooze_clone = app.snooze_state.clone();
             let cache_config_clone = app.cache_config.clone();
             let verbose = app.verbose;
+            let auth_username_clone = app.auth_username.clone();
 
             pending_fetch = Some(tokio::spawn(async move {
                 crate::fetch::fetch_and_score_prs(
-                    &client_clone, &config_clone, &snooze_clone, &cache_config_clone, verbose
+                    &client_clone, &config_clone, &snooze_clone, &cache_config_clone, verbose, auth_username_clone.as_deref()
                 ).await
             }));
             app.is_loading = true;

@@ -60,6 +60,7 @@ pub struct App {
     pub is_loading: bool,
     pub spinner_frame: usize,
     pub rate_limit_remaining: Option<u64>,
+    pub auth_username: Option<String>,
 }
 
 impl App {
@@ -72,6 +73,7 @@ impl App {
         cache_config: CacheConfig,
         cache_handle: Option<Arc<DiskCache>>,
         verbose: bool,
+        auth_username: Option<String>,
     ) -> Self {
         let mut table_state = ratatui::widgets::TableState::default();
         if !active_prs.is_empty() {
@@ -100,6 +102,7 @@ impl App {
             is_loading: false,
             spinner_frame: 0,
             rate_limit_remaining: None,
+            auth_username,
         }
     }
 
@@ -112,6 +115,7 @@ impl App {
         cache_config: CacheConfig,
         cache_handle: Option<Arc<DiskCache>>,
         verbose: bool,
+        auth_username: Option<String>,
     ) -> Self {
         Self {
             active_prs: Vec::new(),
@@ -135,6 +139,7 @@ impl App {
             is_loading: true,
             spinner_frame: 0,
             rate_limit_remaining: None,
+            auth_username,
         }
     }
 

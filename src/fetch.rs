@@ -35,6 +35,7 @@ pub async fn fetch_and_score_prs(
     snooze_state: &SnoozeState,
     cache_config: &CacheConfig,
     verbose: bool,
+    auth_username: Option<&str>,
 ) -> Result<(Vec<(PullRequest, ScoreResult)>, Vec<(PullRequest, ScoreResult)>, Option<u64>)> {
     if verbose {
         let cache_status = if cache_config.enabled {
@@ -53,12 +54,14 @@ pub async fn fetch_and_score_prs(
     let mut any_succeeded = false;
 
     let mut futures = FuturesUnordered::new();
+    let auth_username_owned = auth_username.map(|s| s.to_string());
     for (query_index, query_config) in config.queries.iter().enumerate() {
         let client = client.clone();
         let query = query_config.query.clone();
         let query_name = query_config.name.clone();
+        let auth_username_clone = auth_username_owned.clone();
         futures.push(async move {
-            let result = crate::github::search_and_enrich_prs(&client, &query).await;
+            let result = crate::github::search_and_enrich_prs(&client, &query, auth_username_clone.as_deref()).await;
             (query_name, query, query_index, result)
         });
     }

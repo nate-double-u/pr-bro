@@ -33,6 +33,8 @@ mod tests {
             deletions: 5,
             approvals: 0,
             draft: false,
+            labels: vec![],
+            user_has_reviewed: false,
         }
     }
 

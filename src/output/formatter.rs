@@ -257,6 +257,8 @@ mod tests {
             deletions: 10,
             approvals: 1,
             draft: false,
+            labels: vec![],
+            user_has_reviewed: false,
         }
     }
 

@@ -183,6 +183,8 @@ mod tests {
             deletions: size / 2,
             approvals,
             draft: false,
+            labels: vec![],
+            user_has_reviewed: false,
         }
     }
 

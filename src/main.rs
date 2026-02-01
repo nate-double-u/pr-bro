@@ -206,6 +206,22 @@ async fn main() {
         }
     };
 
+    // Fetch authenticated username once at startup
+    let auth_username: Option<String> = match client.current().user().await {
+        Ok(user) => {
+            if cli.verbose {
+                eprintln!("Authenticated as: {}", user.login);
+            }
+            Some(user.login)
+        }
+        Err(e) => {
+            if cli.verbose {
+                eprintln!("Warning: Could not fetch authenticated user: {}", e);
+            }
+            None
+        }
+    };
+
     // Detect TTY for interactive mode
     let is_interactive = std::io::stdout().is_terminal() && !cli.non_interactive;
 
@@ -223,6 +239,7 @@ async fn main() {
             cache_config,
             cache_handle,
             cli.verbose,
+            auth_username.clone(),
         );
 
         // Launch TUI immediately - it will trigger initial fetch in background
@@ -236,6 +253,7 @@ async fn main() {
 
     // Non-interactive path: fetch and score PRs, with auth re-prompt on failure
     let mut current_client = client;
+    let mut current_auth_username = auth_username;
     let (active_scored, snoozed_scored, _rate_limit) = loop {
         match pr_bro::fetch::fetch_and_score_prs(
             &current_client,
@@ -243,6 +261,7 @@ async fn main() {
             &snooze_state,
             &cache_config,
             cli.verbose,
+            current_auth_username.as_deref(),
         )
         .await
         {
@@ -268,6 +287,22 @@ async fn main() {
                         Err(e) => {
                             eprintln!("Failed to create GitHub client: {}", e);
                             std::process::exit(EXIT_NETWORK);
+                        }
+                    };
+
+                    // Re-fetch authenticated username
+                    current_auth_username = match current_client.current().user().await {
+                        Ok(user) => {
+                            if cli.verbose {
+                                eprintln!("Re-authenticated as: {}", user.login);
+                            }
+                            Some(user.login)
+                        }
+                        Err(e) => {
+                            if cli.verbose {
+                                eprintln!("Warning: Could not fetch authenticated user: {}", e);
+                            }
+                            None
                         }
                     };
 

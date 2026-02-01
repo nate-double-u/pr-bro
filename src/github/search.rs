@@ -45,6 +45,8 @@ pub async fn search_prs(client: &Octocrab, query: &str) -> Result<Vec<PullReques
                             deletions: 0,  // Will be populated by enrichment
                             approvals: 0,  // Requires separate API call
                             draft: false,  // Search API doesn't expose draft status reliably
+                            labels: issue.labels.iter().map(|l| l.name.clone()).collect(),
+                            user_has_reviewed: false, // Will be populated by enrichment
                         })
                     })
                     .collect();
@@ -101,13 +103,14 @@ async fn fetch_pr_details(
     Ok((additions, deletions))
 }
 
-/// Fetch PR review count (approved reviews)
+/// Fetch PR review count (approved reviews) and check if authenticated user has reviewed
 async fn fetch_pr_reviews(
     client: &Octocrab,
     owner: &str,
     repo: &str,
     number: u64,
-) -> Result<u32> {
+    auth_username: Option<&str>,
+) -> Result<(u32, bool)> {
     let reviews = client
         .pulls(owner, repo)
         .list_reviews(number)
@@ -123,11 +126,18 @@ async fn fetch_pr_reviews(
         })
         .count() as u32;
 
-    Ok(approved_count)
+    // Check if authenticated user has reviewed (any review state counts)
+    let user_has_reviewed = auth_username.map_or(false, |username| {
+        reviews.items.iter().any(|r| {
+            r.user.as_ref().map_or(false, |u| u.login.eq_ignore_ascii_case(username))
+        })
+    });
+
+    Ok((approved_count, user_has_reviewed))
 }
 
 /// Enrich a PR with detailed information (size and approvals)
-async fn enrich_pr(client: &Octocrab, pr: &mut PullRequest) -> Result<()> {
+async fn enrich_pr(client: &Octocrab, pr: &mut PullRequest, auth_username: Option<&str>) -> Result<()> {
     // Parse owner/repo from pr.repo field
     let parts: Vec<&str> = pr.repo.split('/').collect();
     if parts.len() != 2 {
@@ -138,13 +148,14 @@ async fn enrich_pr(client: &Octocrab, pr: &mut PullRequest) -> Result<()> {
 
     // Fetch details and reviews in parallel
     let details_fut = fetch_pr_details(client, owner, repo_name, pr.number);
-    let reviews_fut = fetch_pr_reviews(client, owner, repo_name, pr.number);
+    let reviews_fut = fetch_pr_reviews(client, owner, repo_name, pr.number, auth_username);
 
     match tokio::try_join!(details_fut, reviews_fut) {
-        Ok(((additions, deletions), approvals)) => {
+        Ok(((additions, deletions), (approvals, user_has_reviewed))) => {
             pr.additions = additions;
             pr.deletions = deletions;
             pr.approvals = approvals;
+            pr.user_has_reviewed = user_has_reviewed;
             Ok(())
         }
         Err(e) => {
@@ -160,12 +171,13 @@ async fn enrich_pr_with_rate_limit_check(
     client: Octocrab,
     mut pr: PullRequest,
     rate_limited: Arc<AtomicBool>,
+    auth_username: Option<String>,
 ) -> PullRequest {
     if rate_limited.load(Ordering::Relaxed) {
         return pr; // Skip enrichment if rate limited
     }
 
-    match enrich_pr(&client, &mut pr).await {
+    match enrich_pr(&client, &mut pr, auth_username.as_deref()).await {
         Ok(_) => {}
         Err(e) => {
             let err_str = e.to_string();
@@ -181,7 +193,7 @@ async fn enrich_pr_with_rate_limit_check(
 }
 
 /// Search and enrich PRs with full details
-pub async fn search_and_enrich_prs(client: &Octocrab, query: &str) -> Result<Vec<PullRequest>> {
+pub async fn search_and_enrich_prs(client: &Octocrab, query: &str, auth_username: Option<&str>) -> Result<Vec<PullRequest>> {
     let prs = search_prs(client, query).await?;
 
     // Enrich PRs with bounded concurrency
@@ -201,6 +213,7 @@ pub async fn search_and_enrich_prs(client: &Octocrab, query: &str) -> Result<Vec
                 client.clone(),
                 pr,
                 rate_limited.clone(),
+                auth_username.map(|s| s.to_string()),
             ));
         }
     }
@@ -216,6 +229,7 @@ pub async fn search_and_enrich_prs(client: &Octocrab, query: &str) -> Result<Vec
                     client.clone(),
                     next_pr,
                     rate_limited.clone(),
+                    auth_username.map(|s| s.to_string()),
                 ));
             }
         }

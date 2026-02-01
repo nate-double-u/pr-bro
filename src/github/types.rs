@@ -13,6 +13,8 @@ pub struct PullRequest {
     pub deletions: u64,         // Lines deleted
     pub approvals: u32,         // Approval count (will need separate API call)
     pub draft: bool,
+    pub labels: Vec<String>,    // GitHub label names on this PR
+    pub user_has_reviewed: bool, // Whether the authenticated user has submitted a review
 }
 
 impl PullRequest {
