@@ -26,7 +26,7 @@ fn format_pr_line(pr: &PullRequest, use_colors: bool) -> String {
             pr.title.bold(),
             pr.repo.cyan(),
             pr.author.yellow(),
-            pr.url.underline()
+            pr.short_ref().underline()
         )
     } else {
         format!(
@@ -34,7 +34,7 @@ fn format_pr_line(pr: &PullRequest, use_colors: bool) -> String {
             pr.title,
             pr.repo,
             pr.author,
-            pr.url
+            pr.short_ref()
         )
     }
 }
@@ -153,8 +153,8 @@ pub fn format_scored_table(prs: &[ScoredPr], use_colors: bool) -> String {
             let score_padded = format!("{:>width$}", score_str, width = score_width);
 
             // Calculate available title width (accounting for index column)
-            let url_len = scored.pr.url.len();
-            let fixed_width = index_width + 1 + score_width + separator.len() * 2 + url_len;
+            let ref_len = scored.pr.short_ref().len();
+            let fixed_width = index_width + 1 + score_width + separator.len() * 2 + ref_len;
 
             let title = if let Some(width) = term_width {
                 if width > fixed_width + 10 {
@@ -176,7 +176,7 @@ pub fn format_scored_table(prs: &[ScoredPr], use_colors: bool) -> String {
                     separator,
                     title,
                     separator,
-                    scored.pr.url.underline()
+                    scored.pr.short_ref().underline()
                 )
             } else {
                 format!(
@@ -186,7 +186,7 @@ pub fn format_scored_table(prs: &[ScoredPr], use_colors: bool) -> String {
                     separator,
                     title,
                     separator,
-                    scored.pr.url
+                    scored.pr.short_ref()
                 )
             }
         })
@@ -195,7 +195,7 @@ pub fn format_scored_table(prs: &[ScoredPr], use_colors: bool) -> String {
 }
 
 /// Format PRs as tab-separated values for scripting
-/// Columns: score, title, repo, url (no headers, no colors)
+/// Columns: score, title, repo, pr_ref (no headers, no colors)
 pub fn format_tsv(prs: &[ScoredPr]) -> String {
     if prs.is_empty() {
         return String::new();
@@ -209,7 +209,7 @@ pub fn format_tsv(prs: &[ScoredPr]) -> String {
                 score,
                 scored.pr.title,
                 scored.pr.repo,
-                scored.pr.url
+                scored.pr.short_ref()
             )
         })
         .collect::<Vec<_>>()
@@ -274,7 +274,7 @@ mod tests {
         assert!(result.contains("Fix login bug"));
         assert!(result.contains("owner/repo"));
         assert!(result.contains("octocat"));
-        assert!(result.contains("https://github.com/owner/repo/pull/123"));
+        assert!(result.contains("owner/repo#123"));
     }
 
     #[test]
@@ -410,7 +410,7 @@ mod tests {
         // Score should be right-aligned in 7-char column
         assert!(result.contains("1.5k"));
         assert!(result.contains("Fix login bug"));
-        assert!(result.contains("https://github.com/owner/repo/pull/123"));
+        assert!(result.contains("owner/repo#123"));
     }
 
     #[test]
@@ -478,7 +478,7 @@ mod tests {
         let result = format_tsv(&scored_prs);
         assert_eq!(
             result,
-            "1501\tFix login bug\towner/repo\thttps://github.com/owner/repo/pull/123"
+            "1501\tFix login bug\towner/repo\towner/repo#123"
         );
     }
 

@@ -22,7 +22,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     ])
     .split(area);
 
-    render_title(frame, chunks[0]);
+    render_title(frame, chunks[0], app);
     render_tabs(frame, chunks[1], app);
     render_table(frame, chunks[2], app);
     render_status_bar(frame, chunks[3], app);
@@ -40,8 +40,23 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     }
 }
 
-fn render_title(frame: &mut Frame, area: Rect) {
-    let title = Line::from("PR Bro").bold();
+fn render_title(frame: &mut Frame, area: Rect, app: &App) {
+    // Build title with rate limit on the right
+    let mut spans = vec![Span::styled("PR Bro", Style::default().bold())];
+
+    // Add rate limit info on the right if available
+    if let Some(remaining) = app.rate_limit_remaining {
+        let rate_limit_text = format!("API: {} remaining", remaining);
+        let left_len = "PR Bro".len();
+        let right_len = rate_limit_text.len();
+        let padding_len = (area.width as usize).saturating_sub(left_len + right_len);
+
+        // Add padding and rate limit text
+        spans.push(Span::raw(" ".repeat(padding_len)));
+        spans.push(Span::styled(rate_limit_text, Style::default().fg(Color::DarkGray)));
+    }
+
+    let title = Line::from(spans);
     frame.render_widget(Paragraph::new(title), area);
 }
 
@@ -93,7 +108,7 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
                 Cell::from(index).style(Style::default().fg(Color::DarkGray)),
                 Cell::from(score_with_bar),
                 Cell::from(title),
-                Cell::from(pr.url.clone()),
+                Cell::from(pr.short_ref()),
             ])
         })
         .collect();
@@ -103,12 +118,12 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
         Constraint::Length(4),   // Index: "99."
         Constraint::Length(16),  // Score + bar: "12.3k ████░░░░"
         Constraint::Fill(1),     // Title
-        Constraint::Length(50),  // URL
+        Constraint::Length(30),  // PR: "owner/repo#123"
     ];
 
     let table = Table::new(rows, widths)
         .header(
-            Row::new(vec!["#", "Score", "Title", "URL"])
+            Row::new(vec!["#", "Score", "Title", "PR"])
                 .style(Style::new().bold())
                 .bottom_margin(1),
         )
