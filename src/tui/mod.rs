@@ -10,14 +10,15 @@ use event::{Event, EventHandler};
 
 pub async fn run_tui(
     mut app: App,
-    _client: octocrab::Octocrab,
-    _scoring_config: ScoringConfig,
+    client: octocrab::Octocrab,
+    scoring_config: ScoringConfig,
 ) -> anyhow::Result<()> {
     // Init terminal (sets up panic hooks automatically)
     let mut terminal = ratatui::init();
 
-    // Create event handler
-    let mut events = EventHandler::new(250); // 250ms tick
+    // Create event handler with tick rate and auto-refresh interval
+    let refresh_secs = app.config.auto_refresh_interval;
+    let mut events = EventHandler::new(250, refresh_secs); // 250ms tick, N-second refresh
 
     // Main loop
     loop {
@@ -28,6 +29,30 @@ pub async fn run_tui(
         match events.next().await {
             Event::Key(key) => handle_key_event(&mut app, key),
             Event::Tick => app.update_flash(),
+            Event::Refresh => {
+                app.needs_refresh = true;
+            }
+        }
+
+        // Handle async refresh outside the event match
+        if app.needs_refresh {
+            app.needs_refresh = false;
+            match crate::fetch::fetch_and_score_prs(
+                &client,
+                &app.config,
+                &scoring_config,
+                &app.snooze_state,
+                app.verbose,
+            )
+            .await
+            {
+                Ok((active, snoozed)) => {
+                    app.update_prs(active, snoozed);
+                }
+                Err(e) => {
+                    app.show_flash(format!("Refresh failed: {}", e));
+                }
+            }
         }
 
         if app.should_quit {
@@ -75,10 +100,17 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
                 // Undo
                 KeyCode::Char('z') => app.undo_last(),
 
-                // Stubs for future plans
-                KeyCode::Tab => {} // View switching (Plan 04)
-                KeyCode::Char('r') => {} // Refresh (Plan 04)
-                KeyCode::Char('?') => {} // Help (Plan 04)
+                // Tab switching
+                KeyCode::Tab => app.toggle_view(),
+
+                // Refresh
+                KeyCode::Char('r') => {
+                    app.needs_refresh = true;
+                    app.show_flash("Refreshing...".to_string());
+                }
+
+                // Help
+                KeyCode::Char('?') => app.show_help(),
 
                 _ => {}
             }
@@ -106,15 +138,8 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
             }
         }
         app::InputMode::Help => {
-            // Any key exits help (will be implemented in Plan 04)
-            match key.code {
-                KeyCode::Esc | KeyCode::Char('?') => {
-                    app.input_mode = app::InputMode::Normal;
-                }
-                _ => {
-                    app.input_mode = app::InputMode::Normal;
-                }
-            }
+            // Any key exits help
+            app.dismiss_help();
         }
     }
 }
