@@ -26,7 +26,7 @@ pub struct QueryConfig {
     pub name: Option<String>,
     pub query: String,
 
-    /// Per-query scoring configuration (overrides global scoring)
+    /// Per-query scoring configuration (merges with global scoring — set fields override, unset fields inherit from global)
     #[serde(default)]
     pub scoring: Option<ScoringConfig>,
 }

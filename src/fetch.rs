@@ -2,7 +2,7 @@ use anyhow::Result;
 use crate::config::Config;
 use crate::github::cache::CacheConfig;
 use crate::github::types::PullRequest;
-use crate::scoring::{ScoreResult, calculate_score};
+use crate::scoring::{ScoreResult, calculate_score, merge_scoring_configs};
 use crate::snooze::{SnoozeState, filter_active_prs, filter_snoozed_prs};
 use futures::stream::{FuturesUnordered, StreamExt};
 use std::collections::{HashSet, HashMap};
@@ -60,8 +60,14 @@ pub async fn fetch_and_score_prs(
         let query = query_config.query.clone();
         let query_name = query_config.name.clone();
         let auth_username_clone = auth_username_owned.clone();
+        // Merge scoring config for this query to get the effective exclude patterns
+        let merged_scoring = merge_scoring_configs(
+            &global_scoring,
+            query_config.scoring.as_ref(),
+        );
+        let exclude_patterns = merged_scoring.size.and_then(|s| s.exclude);
         futures.push(async move {
-            let result = crate::github::search_and_enrich_prs(&client, &query, auth_username_clone.as_deref(), None).await;
+            let result = crate::github::search_and_enrich_prs(&client, &query, auth_username_clone.as_deref(), exclude_patterns).await;
             (query_name, query, query_index, result)
         });
     }
@@ -121,28 +127,32 @@ pub async fn fetch_and_score_prs(
         eprintln!("After filter: {} active, {} snoozed", active_prs.len(), snoozed_prs.len());
     }
 
-    // Score active PRs (resolve per-query scoring config for each PR)
+    // Score active PRs (merge per-query scoring config with global for each PR)
     let mut active_scored: Vec<_> = active_prs
         .into_iter()
         .map(|pr| {
-            // Look up which query this PR came from and resolve its scoring config
+            // Look up which query this PR came from and merge its scoring config
             let query_idx = pr_to_query_index.get(&pr.url).copied().unwrap_or(0);
-            let scoring = config.queries[query_idx].scoring.as_ref()
-                .unwrap_or(&global_scoring);
-            let result = calculate_score(&pr, scoring);
+            let scoring = merge_scoring_configs(
+                &global_scoring,
+                config.queries[query_idx].scoring.as_ref(),
+            );
+            let result = calculate_score(&pr, &scoring);
             (pr, result)
         })
         .collect();
 
-    // Score snoozed PRs (resolve per-query scoring config for each PR)
+    // Score snoozed PRs (merge per-query scoring config with global for each PR)
     let mut snoozed_scored: Vec<_> = snoozed_prs
         .into_iter()
         .map(|pr| {
-            // Look up which query this PR came from and resolve its scoring config
+            // Look up which query this PR came from and merge its scoring config
             let query_idx = pr_to_query_index.get(&pr.url).copied().unwrap_or(0);
-            let scoring = config.queries[query_idx].scoring.as_ref()
-                .unwrap_or(&global_scoring);
-            let result = calculate_score(&pr, scoring);
+            let scoring = merge_scoring_configs(
+                &global_scoring,
+                config.queries[query_idx].scoring.as_ref(),
+            );
+            let result = calculate_score(&pr, &scoring);
             (pr, result)
         })
         .collect();
