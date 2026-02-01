@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use std::collections::HashSet;
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -51,6 +51,14 @@ struct Cli {
     /// Path to config file (defaults to ~/.config/pr-bro/config.yaml)
     #[arg(short, long, global = true)]
     config: Option<String>,
+
+    /// Force plain text output even in a terminal
+    #[arg(long, global = true)]
+    non_interactive: bool,
+
+    /// Output format when non-interactive (table or tsv)
+    #[arg(long, global = true, default_value = "table")]
+    format: String,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -143,94 +151,55 @@ async fn main() {
         }
     };
 
-    // Search PRs for each query
-    let mut all_prs = Vec::new();
-    let mut any_succeeded = false;
-
-    for query_config in &config.queries {
-        if cli.verbose {
-            let query_start = Instant::now();
-            eprintln!("Searching: {}", query_config.query);
-
-            match pr_bro::github::search_and_enrich_prs(&client, &query_config.query).await {
-                Ok(prs) => {
-                    eprintln!(
-                        "  Found {} PRs in {:?}",
-                        prs.len(),
-                        query_start.elapsed()
-                    );
-                    all_prs.extend(prs);
-                    any_succeeded = true;
-                }
-                Err(e) => {
-                    eprintln!("  Query failed: {}", e);
-                    // Continue with other queries (partial failure per CONTEXT.md)
-                }
-            }
-        } else {
-            match pr_bro::github::search_and_enrich_prs(&client, &query_config.query).await {
-                Ok(prs) => {
-                    all_prs.extend(prs);
-                    any_succeeded = true;
-                }
-                Err(e) => {
-                    eprintln!("Query failed: {} - {}", query_config.query, e);
-                    // Continue with other queries
-                }
-            }
+    // Fetch and score PRs using reusable function
+    let (active_scored, snoozed_scored) = match pr_bro::fetch::fetch_and_score_prs(
+        &client,
+        &config,
+        &effective_scoring,
+        &snooze_state,
+        cli.verbose,
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(e) => {
+            eprintln!("Failed to fetch PRs: {}", e);
+            std::process::exit(EXIT_NETWORK);
         }
-    }
-
-    // If all queries failed, exit with network error
-    if !any_succeeded && !config.queries.is_empty() {
-        eprintln!("All queries failed. Check your network connection and GitHub token.");
-        std::process::exit(EXIT_NETWORK);
-    }
-
-    // Deduplicate PRs by URL (same PR may appear in multiple queries)
-    let mut seen_urls = HashSet::new();
-    let unique_prs: Vec<_> = all_prs
-        .into_iter()
-        .filter(|pr| seen_urls.insert(pr.url.clone()))
-        .collect();
-
-    if cli.verbose {
-        let deduped_count = unique_prs.len();
-        eprintln!("After deduplication: {} unique PRs", deduped_count);
-    }
-
-    // Apply snooze filtering based on command type
-    let use_snoozed_view = matches!(&command, Commands::List { show_snoozed: true } | Commands::Unsnooze { .. });
-    let filtered_prs = if use_snoozed_view {
-        pr_bro::snooze::filter_snoozed_prs(unique_prs, &snooze_state)
-    } else {
-        pr_bro::snooze::filter_active_prs(unique_prs, &snooze_state)
     };
 
-    if cli.verbose {
-        let filter_type = if use_snoozed_view { "snoozed" } else { "active" };
-        eprintln!("After {} filter: {} PRs", filter_type, filtered_prs.len());
+    // Detect TTY for interactive mode
+    let is_interactive = std::io::stdout().is_terminal() && !cli.non_interactive;
+
+    // If interactive and default list command (not explicit subcommand), launch TUI
+    if is_interactive && matches!(command, Commands::List { show_snoozed: false }) {
+        if cli.verbose {
+            eprintln!("Launching TUI mode...");
+        }
+
+        let app = pr_bro::tui::App::new(
+            active_scored,
+            snoozed_scored,
+            snooze_state,
+            snooze_path,
+            config,
+            cli.verbose,
+        );
+
+        if let Err(e) = pr_bro::tui::run_tui(app, client, effective_scoring).await {
+            eprintln!("TUI error: {}", e);
+            std::process::exit(EXIT_NETWORK);
+        }
+
+        std::process::exit(EXIT_SUCCESS);
     }
 
-    // Calculate scores for all PRs
-    let mut scored_prs: Vec<_> = filtered_prs
-        .into_iter()
-        .map(|pr| {
-            let result = pr_bro::scoring::calculate_score(&pr, &effective_scoring);
-            (pr, result)
-        })
-        .collect();
-
-    // Sort by score descending, then by age ascending (older first for ties)
-    scored_prs.sort_by(|a, b| {
-        // Primary: score descending
-        let score_cmp = b.1.score.partial_cmp(&a.1.score).unwrap_or(std::cmp::Ordering::Equal);
-        if score_cmp != std::cmp::Ordering::Equal {
-            return score_cmp;
-        }
-        // Tie-breaker: age ascending (older first = smaller created_at)
-        a.0.created_at.cmp(&b.0.created_at)
-    });
+    // Non-interactive path: use existing CLI behavior
+    // Select which list to use based on command
+    let scored_prs = match &command {
+        Commands::List { show_snoozed: true } | Commands::Unsnooze { .. } => snoozed_scored,
+        _ => active_scored,
+    };
 
     // Route based on subcommand
     match command {
