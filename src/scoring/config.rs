@@ -98,6 +98,53 @@ impl Default for ScoringConfig {
     }
 }
 
+/// Merge per-query scoring config with global config at field level.
+/// Per-query `Some` values override global values.
+/// Per-query `None` values fall through to global values.
+/// This allows setting only `scoring.age` in a query while preserving global size/approvals/etc.
+pub fn merge_scoring_configs(
+    global: &ScoringConfig,
+    query: Option<&ScoringConfig>,
+) -> ScoringConfig {
+    let Some(query) = query else {
+        return global.clone();
+    };
+
+    ScoringConfig {
+        base_score: query.base_score.or(global.base_score),
+        age: query.age.clone().or_else(|| global.age.clone()),
+        approvals: query.approvals.clone().or_else(|| global.approvals.clone()),
+        size: merge_size_configs(global.size.as_ref(), query.size.as_ref()),
+        labels: query.labels.clone().or_else(|| global.labels.clone()),
+        previously_reviewed: query
+            .previously_reviewed
+            .clone()
+            .or_else(|| global.previously_reviewed.clone()),
+    }
+}
+
+/// Merge SizeConfig with nested field handling.
+/// When both global and query have SizeConfig:
+/// - exclude: per-query overrides global (or falls through if None)
+/// - buckets: per-query overrides global if non-empty (empty vec falls through to global)
+fn merge_size_configs(
+    global: Option<&SizeConfig>,
+    query: Option<&SizeConfig>,
+) -> Option<SizeConfig> {
+    match (query, global) {
+        (Some(q), Some(g)) => Some(SizeConfig {
+            exclude: q.exclude.clone().or_else(|| g.exclude.clone()),
+            buckets: if !q.buckets.is_empty() {
+                q.buckets.clone()
+            } else {
+                g.buckets.clone()
+            },
+        }),
+        (Some(q), None) => Some(q.clone()),
+        (None, g) => g.cloned(),
+    }
+}
+
 /// Size factor configuration.
 ///
 /// Supports file exclusion patterns and size-based buckets.
@@ -265,5 +312,209 @@ previously_reviewed: "x0.5"
         assert!(config.size.is_some());
         assert_eq!(config.labels.as_ref().unwrap().len(), 1);
         assert_eq!(config.previously_reviewed, Some("x0.5".to_string()));
+    }
+
+    // --- Merge function tests ---
+
+    #[test]
+    fn test_merge_no_query_returns_global() {
+        let global = ScoringConfig::default();
+        let result = merge_scoring_configs(&global, None);
+        assert_eq!(result, global);
+    }
+
+    #[test]
+    fn test_merge_partial_query_preserves_global_fields() {
+        let global = ScoringConfig {
+            base_score: Some(100.0),
+            age: Some("+1 per 1h".to_string()),
+            approvals: Some("+10 per 1".to_string()),
+            size: Some(SizeConfig {
+                exclude: Some(vec!["*.lock".to_string()]),
+                buckets: vec![SizeBucket {
+                    range: "<100".to_string(),
+                    effect: "x5".to_string(),
+                }],
+            }),
+            labels: Some(vec![LabelEffect {
+                name: "urgent".to_string(),
+                effect: "+10".to_string(),
+            }]),
+            previously_reviewed: Some("x0.5".to_string()),
+        };
+
+        // Query only sets age — everything else should come from global
+        let query = ScoringConfig {
+            base_score: None,
+            age: Some("+5 per 1h".to_string()),
+            approvals: None,
+            size: None,
+            labels: None,
+            previously_reviewed: None,
+        };
+
+        let result = merge_scoring_configs(&global, Some(&query));
+        assert_eq!(result.base_score, Some(100.0)); // from global
+        assert_eq!(result.age, Some("+5 per 1h".to_string())); // from query
+        assert_eq!(result.approvals, Some("+10 per 1".to_string())); // from global
+        assert!(result.size.is_some()); // from global
+        assert_eq!(result.size.as_ref().unwrap().exclude, Some(vec!["*.lock".to_string()]));
+        assert_eq!(result.labels.as_ref().unwrap().len(), 1); // from global
+        assert_eq!(result.previously_reviewed, Some("x0.5".to_string())); // from global
+    }
+
+    #[test]
+    fn test_merge_query_overrides_global() {
+        let global = ScoringConfig {
+            base_score: Some(100.0),
+            age: Some("+1 per 1h".to_string()),
+            approvals: None,
+            size: None,
+            labels: None,
+            previously_reviewed: None,
+        };
+
+        let query = ScoringConfig {
+            base_score: Some(200.0),
+            age: Some("+5 per 1h".to_string()),
+            approvals: None,
+            size: None,
+            labels: None,
+            previously_reviewed: None,
+        };
+
+        let result = merge_scoring_configs(&global, Some(&query));
+        assert_eq!(result.base_score, Some(200.0)); // query override
+        assert_eq!(result.age, Some("+5 per 1h".to_string())); // query override
+    }
+
+    #[test]
+    fn test_merge_size_config_preserves_global_exclude() {
+        let global = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: Some(SizeConfig {
+                exclude: Some(vec!["*.lock".to_string()]),
+                buckets: vec![SizeBucket {
+                    range: "<100".to_string(),
+                    effect: "x5".to_string(),
+                }],
+            }),
+            labels: None,
+            previously_reviewed: None,
+        };
+
+        // Query has size with new buckets but no exclude
+        let query = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: Some(SizeConfig {
+                exclude: None,
+                buckets: vec![SizeBucket {
+                    range: "<50".to_string(),
+                    effect: "x10".to_string(),
+                }],
+            }),
+            labels: None,
+            previously_reviewed: None,
+        };
+
+        let result = merge_scoring_configs(&global, Some(&query));
+        let size = result.size.unwrap();
+        // exclude falls through from global
+        assert_eq!(size.exclude, Some(vec!["*.lock".to_string()]));
+        // buckets from query (non-empty)
+        assert_eq!(size.buckets.len(), 1);
+        assert_eq!(size.buckets[0].range, "<50");
+    }
+
+    #[test]
+    fn test_merge_size_config_empty_buckets_falls_through() {
+        let global = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: Some(SizeConfig {
+                exclude: None,
+                buckets: vec![SizeBucket {
+                    range: "<100".to_string(),
+                    effect: "x5".to_string(),
+                }],
+            }),
+            labels: None,
+            previously_reviewed: None,
+        };
+
+        // Query has size with empty buckets and no exclude
+        let query = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: Some(SizeConfig {
+                exclude: None,
+                buckets: vec![],
+            }),
+            labels: None,
+            previously_reviewed: None,
+        };
+
+        let result = merge_scoring_configs(&global, Some(&query));
+        let size = result.size.unwrap();
+        // Empty buckets fall through to global
+        assert_eq!(size.buckets.len(), 1);
+        assert_eq!(size.buckets[0].range, "<100");
+    }
+
+    #[test]
+    fn test_merge_size_config_query_exclude_overrides_global() {
+        let global = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: Some(SizeConfig {
+                exclude: Some(vec!["*.lock".to_string()]),
+                buckets: vec![],
+            }),
+            labels: None,
+            previously_reviewed: None,
+        };
+
+        let query = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: Some(SizeConfig {
+                exclude: Some(vec!["*.json".to_string()]),
+                buckets: vec![],
+            }),
+            labels: None,
+            previously_reviewed: None,
+        };
+
+        let result = merge_scoring_configs(&global, Some(&query));
+        let size = result.size.unwrap();
+        // Query exclude overrides global
+        assert_eq!(size.exclude, Some(vec!["*.json".to_string()]));
+    }
+
+    #[test]
+    fn test_merge_all_none_query() {
+        let global = ScoringConfig::default();
+
+        // Query with all fields None
+        let query = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: None,
+            labels: None,
+            previously_reviewed: None,
+        };
+
+        let result = merge_scoring_configs(&global, Some(&query));
+        // Should behave same as no query — returns global values
+        assert_eq!(result, global);
     }
 }
