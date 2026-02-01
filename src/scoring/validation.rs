@@ -62,6 +62,18 @@ pub fn validate_scoring(config: &ScoringConfig) -> Result<(), Vec<String>> {
         if let Err(e) = check_bucket_overlaps(&size_config.buckets) {
             errors.push(e);
         }
+
+        // Validate size exclude patterns
+        if let Some(ref excludes) = size_config.exclude {
+            for (i, pattern) in excludes.iter().enumerate() {
+                if let Err(e) = glob::Pattern::new(pattern) {
+                    errors.push(format!(
+                        "scoring.size.exclude[{}]: invalid glob pattern '{}' - {}",
+                        i, pattern, e
+                    ));
+                }
+            }
+        }
     }
 
     // Validate label effects
@@ -508,6 +520,69 @@ mod tests {
         let errors = result.unwrap_err();
         assert!(errors[0].contains("scoring.previously_reviewed"));
         assert!(errors[0].contains("invalid"));
+    }
+
+    #[test]
+    fn test_valid_exclude_patterns() {
+        let config = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: Some(SizeConfig {
+                exclude: Some(vec!["*.lock".to_string(), "*.json".to_string()]),
+                buckets: vec![
+                    SizeBucket { range: "<100".to_string(), effect: "x5".to_string() },
+                ],
+            }),
+            labels: None,
+            previously_reviewed: None,
+        };
+        assert!(validate_scoring(&config).is_ok());
+    }
+
+    #[test]
+    fn test_invalid_exclude_pattern() {
+        let config = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: Some(SizeConfig {
+                exclude: Some(vec!["[invalid".to_string()]),
+                buckets: vec![
+                    SizeBucket { range: "<100".to_string(), effect: "x5".to_string() },
+                ],
+            }),
+            labels: None,
+            previously_reviewed: None,
+        };
+        let result = validate_scoring(&config);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors[0].contains("scoring.size.exclude[0]"));
+        assert!(errors[0].contains("[invalid"));
+    }
+
+    #[test]
+    fn test_exclude_patterns_validated_with_other_errors() {
+        let config = ScoringConfig {
+            base_score: Some(-10.0),  // Error 1
+            age: None,
+            approvals: None,
+            size: Some(SizeConfig {
+                exclude: Some(vec!["[bad".to_string()]),  // Error 2
+                buckets: vec![
+                    SizeBucket { range: "<100".to_string(), effect: "x5".to_string() },
+                ],
+            }),
+            labels: None,
+            previously_reviewed: None,
+        };
+        let result = validate_scoring(&config);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 2);
+        assert!(errors.iter().any(|e| e.contains("base_score")));
+        assert!(errors.iter().any(|e| e.contains("scoring.size.exclude[0]")));
     }
 
     #[test]

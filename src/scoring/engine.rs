@@ -516,6 +516,31 @@ mod tests {
     }
 
     #[test]
+    fn test_size_uses_filtered_size() {
+        let mut pr = sample_pr(1, 0, 1000);  // additions=500, deletions=500, total=1000
+        pr.filtered_size = Some(50);  // After exclusion, only 50 lines
+
+        let config = ScoringConfig {
+            base_score: Some(100.0),
+            age: None,
+            approvals: None,
+            size: Some(SizeConfig {
+                exclude: None,
+                buckets: vec![
+                    SizeBucket { range: "<100".to_string(), effect: "x5".to_string() },
+                    SizeBucket { range: ">=100".to_string(), effect: "x1".to_string() },
+                ],
+            }),
+            labels: None,
+            previously_reviewed: None,
+        };
+
+        let result = calculate_score(&pr, &config);
+        // filtered_size=50, matches <100 bucket -> x5, so 100 * 5 = 500
+        assert_eq!(result.score, 500.0);
+    }
+
+    #[test]
     fn test_full_scoring_with_all_factors() {
         let mut pr = sample_pr(5, 2, 50);  // 5h old, 2 approvals, 50 lines
         pr.labels = vec!["urgent".to_string()];
