@@ -1,6 +1,7 @@
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Cell, Clear, Paragraph, Row, Table, Tabs};
 use crate::tui::app::{App, InputMode, View};
+use crate::tui::theme;
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
@@ -42,7 +43,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 
 fn render_title(frame: &mut Frame, area: Rect, app: &App) {
     // Build title with rate limit on the right
-    let mut spans = vec![Span::styled("PR Bro", Style::default().bold())];
+    let mut spans = vec![Span::styled("PR Bro", theme::TITLE_STYLE)];
 
     // Add rate limit info on the right if available
     if let Some(remaining) = app.rate_limit_remaining {
@@ -53,7 +54,7 @@ fn render_title(frame: &mut Frame, area: Rect, app: &App) {
 
         // Add padding and rate limit text
         spans.push(Span::raw(" ".repeat(padding_len)));
-        spans.push(Span::styled(rate_limit_text, Style::default().fg(Color::DarkGray)));
+        spans.push(Span::styled(rate_limit_text, Style::default().fg(theme::MUTED)));
     }
 
     let title = Line::from(spans);
@@ -69,7 +70,7 @@ fn render_tabs(frame: &mut Frame, area: Rect, app: &App) {
 
     let tabs = Tabs::new(titles)
         .select(selected)
-        .highlight_style(Style::default().reversed())
+        .highlight_style(theme::TAB_ACTIVE)
         .divider(" | ");
 
     frame.render_widget(tabs, area);
@@ -98,18 +99,33 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
         .map(|(idx, (pr, score_result))| {
             let index = format!("{}.", idx + 1);
             let score_str = format_score(score_result.score, score_result.incomplete);
-            let bar = score_bar(score_result.score, max_score, 8);
-            let score_with_bar = format!("{:>5} {}", score_str, bar);
+            let bar_line = score_bar(score_result.score, max_score, 8);
+
+            // Build score cell with colored text and bar
+            let score_color = theme::score_color(score_result.score, max_score);
+            let mut score_spans = vec![
+                Span::styled(format!("{:>5} ", score_str), Style::default().fg(score_color))
+            ];
+            score_spans.extend(bar_line.spans);
+            let score_line = Line::from(score_spans);
 
             // Truncate title to fit available width
             let title = truncate_title(&pr.title, 60);
 
+            // Alternating row background (odd rows get subtle background)
+            let row_style = if idx % 2 == 1 {
+                Style::default().bg(theme::ROW_ALT_BG)
+            } else {
+                Style::default()
+            };
+
             Row::new(vec![
-                Cell::from(index).style(Style::default().fg(Color::DarkGray)),
-                Cell::from(score_with_bar),
+                Cell::from(index).style(Style::default().fg(theme::INDEX_COLOR)),
+                Cell::from(score_line),
                 Cell::from(title),
                 Cell::from(pr.short_ref()),
             ])
+            .style(row_style)
         })
         .collect();
 
@@ -124,10 +140,10 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
     let table = Table::new(rows, widths)
         .header(
             Row::new(vec!["#", "Score", "Title", "PR"])
-                .style(Style::new().bold())
+                .style(theme::HEADER_STYLE)
                 .bottom_margin(1),
         )
-        .row_highlight_style(Style::new().reversed());
+        .row_highlight_style(theme::ROW_SELECTED);
 
     frame.render_stateful_widget(table, area, &mut app.table_state);
 }
@@ -160,11 +176,11 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         };
 
         Line::from(vec![
-            Span::styled(count, Style::default().fg(Color::DarkGray)),
+            Span::styled(count, Style::default().fg(theme::MUTED)),
             Span::raw(" "),
-            Span::styled(view_mode, Style::default().fg(Color::DarkGray)),
+            Span::styled(view_mode, Style::default().fg(theme::MUTED)),
             Span::raw(" "),
-            Span::styled(refresh_time, Style::default().fg(Color::DarkGray)),
+            Span::styled(refresh_time, Style::default().fg(theme::MUTED)),
             Span::raw("  "),
             Span::raw(hints),
         ])
@@ -194,7 +210,7 @@ fn format_score(score: f64, incomplete: bool) -> String {
     }
 }
 
-fn score_bar(score: f64, max_score: f64, width: usize) -> String {
+fn score_bar(score: f64, max_score: f64, width: usize) -> Line<'static> {
     let ratio = if max_score > 0.0 {
         (score / max_score).min(1.0)
     } else {
@@ -202,7 +218,19 @@ fn score_bar(score: f64, max_score: f64, width: usize) -> String {
     };
     let filled = (ratio * width as f64).round() as usize;
     let empty = width.saturating_sub(filled);
-    format!("{}{}", "█".repeat(filled), "░".repeat(empty))
+
+    // Get color based on score
+    let bar_color = theme::score_color(score, max_score);
+
+    let mut spans = Vec::new();
+    if filled > 0 {
+        spans.push(Span::styled("█".repeat(filled), Style::default().fg(bar_color)));
+    }
+    if empty > 0 {
+        spans.push(Span::styled("░".repeat(empty), Style::default().fg(theme::BAR_EMPTY)));
+    }
+
+    Line::from(spans)
 }
 
 fn truncate_title(title: &str, max_width: usize) -> String {
@@ -244,7 +272,7 @@ fn render_snooze_popup(frame: &mut Frame, app: &App) {
 
     // Render help text
     let help = Paragraph::new("Enter: confirm | Esc: cancel | empty = indefinite")
-        .style(Style::default().fg(Color::DarkGray));
+        .style(Style::default().fg(theme::MUTED));
     frame.render_widget(help, chunks[1]);
 }
 
@@ -324,7 +352,7 @@ fn render_help_popup(frame: &mut Frame) {
         ]),
         Line::from(""),
         Line::from(
-            Span::styled("Press any key to close", Style::default().fg(Color::DarkGray))
+            Span::styled("Press any key to close", Style::default().fg(theme::MUTED))
         ),
     ];
 
