@@ -6,7 +6,7 @@ GitHub PR review prioritization CLI/TUI
 
 ## Features
 
-- Weighted scoring based on age, approvals, and PR size
+- Weighted scoring based on age, approvals, PR size, labels, and review history
 - Interactive TUI with keyboard navigation and real-time updates
 - Multiple query support with per-query scoring overrides
 - Snooze PRs (timed or indefinite) to hide them temporarily
@@ -82,6 +82,12 @@ scoring:
         effect: "x1"      # Medium PRs: no change
       - range: ">500"
         effect: "x0.5"    # Large PRs get 0.5x penalty
+  labels:
+    - name: "urgent"
+      effect: "+10"
+    - name: "wip"
+      effect: "x0.5"
+  previously_reviewed: "x0.5"
 
 # Queries to execute (at least one required)
 queries:
@@ -155,6 +161,40 @@ size:
       effect: "x0.5"    # Large PRs: 0.5x penalty
 ```
 
+#### Labels
+
+Optional. Applies score effects based on GitHub labels on the PR. Multiple matching labels compound their effects sequentially (not first-match). Label matching is **case-insensitive**.
+
+```yaml
+labels:
+  - name: "urgent"
+    effect: "+10"     # Add 10 points for urgent PRs
+  - name: "wip"
+    effect: "x0.5"    # Halve score for work-in-progress
+  - name: "critical"
+    effect: "x2"      # Double score for critical PRs
+```
+
+A PR with both "urgent" and "critical" labels gets both effects: score + 10, then x2.
+
+Each matching label appears as a separate entry in the score breakdown detail view (press `d`).
+
+#### Previously Reviewed
+
+Optional. Applies a score effect when the authenticated user (the user whose token is configured) has previously submitted a review on the PR. This includes all review states: approved, changes requested, commented, or dismissed.
+
+```yaml
+previously_reviewed: "x0.5"   # De-prioritize already-reviewed PRs
+```
+
+Or to boost PRs you've already engaged with:
+
+```yaml
+previously_reviewed: "+20"    # Boost PRs you've reviewed before
+```
+
+Detection uses the GitHub reviews API data that is already fetched for approval counting — no extra API calls. The authenticated username is fetched once at startup.
+
 ### Effect Syntax Summary
 
 | Syntax | Meaning |
@@ -165,6 +205,8 @@ size:
 | `xN per DURATION` | Multiply by N per time unit (age only) |
 | `+N per M` | Add N points per M units (approvals only) |
 | `xN per M` | Multiply by N per M units (approvals only) |
+
+Labels and previously_reviewed use flat effects (`+N` or `xN`), not per-unit effects.
 
 ### Per-Query Scoring
 
@@ -196,6 +238,8 @@ pr-bro validates your configuration at startup with clear error messages:
 - **Unknown YAML keys** are rejected (catches typos like `approvalls` instead of `approvals`)
 - **Overlapping size bucket ranges** are rejected (prevents ambiguous scoring)
 - **Invalid effect syntax** is caught with helpful messages
+- **Empty label names** are rejected
+- **Invalid label effects** and **invalid previously_reviewed effects** are caught at startup
 
 Validation errors will show exactly what's wrong and where, so you can fix configuration issues quickly.
 
@@ -292,6 +336,8 @@ Press `d` to see how the selected PR's score was calculated. Shows:
 - Age contribution (if configured)
 - Approvals contribution (if configured)
 - Size contribution (if configured)
+- Label contributions (if configured and labels match)
+- Previously reviewed contribution (if configured and you've reviewed the PR)
 
 Press `Esc` or `d` again to dismiss.
 
