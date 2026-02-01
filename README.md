@@ -33,7 +33,7 @@ cargo install --path .
 
 ## Quick Start
 
-On first run, pr-bro will prompt for your GitHub Personal Access Token and store it securely in your system keyring.
+On first run (without `PR_BRO_GH_TOKEN` set), pr-bro will prompt for your GitHub Personal Access Token and store it securely in your system keyring.
 
 ### Minimal Configuration
 
@@ -304,9 +304,24 @@ pr-bro stores your GitHub token securely in your system keyring:
 - **Windows**: Credential Manager
 - **Linux**: Secret Service (GNOME Keyring, KWallet)
 
+### Environment Variable
+
+For CI pipelines, scripts, or environments without a system keyring, set the `PR_BRO_GH_TOKEN` environment variable:
+
+```bash
+export PR_BRO_GH_TOKEN="ghp_your_token_here"
+pr-bro list
+```
+
+Behavior:
+- When `PR_BRO_GH_TOKEN` is set and non-empty, the token is used directly with **no keyring access and no interactive prompt**
+- Empty or whitespace-only values are treated as unset (falls through to keyring)
+- If the token is invalid (401), pr-bro will prompt for a new token and store it in the keyring (fix the env var externally for future runs)
+- Verbose mode (`-v`) reports whether the token came from the env var or system keyring
+
 ### First Run
 
-On first run, pr-bro will prompt for your GitHub Personal Access Token. Create one at:
+On first run (without `PR_BRO_GH_TOKEN` set), pr-bro will prompt for your GitHub Personal Access Token and store it securely in your system keyring. Create one at:
 https://github.com/settings/tokens
 
 **Required scopes:**
