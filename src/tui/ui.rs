@@ -496,11 +496,12 @@ fn render_score_breakdown_popup(frame: &mut Frame, app: &App) {
 
     let breakdown = &score_result.breakdown;
 
-    // Calculate dynamic height: 4 header lines + factors + 3 footer lines
-    // Minimum 10, max ~18 to avoid overflow
+    // Calculate dynamic height: 4 header lines + 2 lines per factor + 3 footer lines
+    // Each factor uses 2 lines: values + indented description
     let num_factors = breakdown.factors.len();
-    let content_height = 4 + num_factors + 3;
-    let popup_height = content_height.clamp(10, 18) as u16;
+    let factor_lines = if num_factors == 0 { 2 } else { num_factors * 2 };
+    let content_height = 4 + factor_lines + 3;
+    let popup_height = (content_height as u16).min(frame.area().height.saturating_sub(2));
 
     let popup_area = centered_rect_fixed(55, popup_height, frame.area());
 
@@ -566,6 +567,7 @@ fn render_score_breakdown_popup(frame: &mut Frame, app: &App) {
                 Color::White
             };
 
+            // Line 1: label + before -> after
             lines.push(Line::from(vec![
                 Span::styled(
                     format!("{}: ", factor.label),
@@ -580,11 +582,13 @@ fn render_score_breakdown_popup(frame: &mut Frame, app: &App) {
                     format!("{:.1}", factor.after),
                     Style::default().fg(after_color).bold(),
                 ),
-                Span::styled(
-                    format!(" ({})", factor.description),
-                    Style::default().fg(Color::DarkGray),
-                ),
             ]));
+
+            // Line 2: indented description
+            lines.push(Line::from(Span::styled(
+                format!("  {}", factor.description),
+                Style::default().fg(Color::DarkGray),
+            )));
         }
     }
 
