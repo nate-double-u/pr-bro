@@ -60,6 +60,14 @@ struct Cli {
     #[arg(long, global = true, default_value = "table")]
     format: String,
 
+    /// Disable HTTP response caching for this run
+    #[arg(long, global = true)]
+    no_cache: bool,
+
+    /// Remove cached GitHub API responses and exit
+    #[arg(long, global = true)]
+    clear_cache: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -74,6 +82,22 @@ async fn main() {
     let cli = Cli::parse();
     let command = cli.command.unwrap_or(Commands::List { show_snoozed: false });
     let start_time = Instant::now();
+
+    // Handle --clear-cache flag (early exit before credential setup)
+    if cli.clear_cache {
+        let cache_path = pr_bro::github::get_cache_path();
+        println!("Clearing cache at: {}", cache_path.display());
+        match pr_bro::github::clear_cache() {
+            Ok(()) => {
+                println!("Cache cleared.");
+                std::process::exit(EXIT_SUCCESS);
+            }
+            Err(e) => {
+                eprintln!("Failed to clear cache: {}", e);
+                std::process::exit(EXIT_CONFIG);
+            }
+        }
+    }
 
     // Load config
     let config_path = cli.config.map(PathBuf::from);
@@ -142,8 +166,22 @@ async fn main() {
         eprintln!("Token retrieved from keyring");
     }
 
+    // Create cache config
+    let cache_config = pr_bro::github::CacheConfig {
+        enabled: !cli.no_cache,
+    };
+
+    if cli.verbose {
+        let status = if cache_config.enabled {
+            "enabled"
+        } else {
+            "disabled (--no-cache)"
+        };
+        eprintln!("Cache: {} ({})", status, pr_bro::github::get_cache_path().display());
+    }
+
     // Create GitHub client
-    let client = match pr_bro::github::create_client(&token) {
+    let client = match pr_bro::github::create_client(&token, &cache_config) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("Failed to create GitHub client: {}", e);
