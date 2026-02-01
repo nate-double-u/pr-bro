@@ -64,6 +64,31 @@ pub fn validate_scoring(config: &ScoringConfig) -> Result<(), Vec<String>> {
         }
     }
 
+    // Validate label effects
+    if let Some(ref labels) = config.labels {
+        for (i, label_effect) in labels.iter().enumerate() {
+            if label_effect.name.trim().is_empty() {
+                errors.push(format!("scoring.labels[{}].name: must not be empty", i));
+            }
+            if let Err(e) = Effect::parse(&label_effect.effect) {
+                errors.push(format!(
+                    "scoring.labels[{}].effect: invalid '{}' - {}",
+                    i, label_effect.effect, e
+                ));
+            }
+        }
+    }
+
+    // Validate previously_reviewed effect
+    if let Some(ref reviewed) = config.previously_reviewed {
+        if let Err(e) = Effect::parse(reviewed) {
+            errors.push(format!(
+                "scoring.previously_reviewed: invalid '{}' - {}",
+                reviewed, e
+            ));
+        }
+    }
+
     if errors.is_empty() {
         Ok(())
     } else {
@@ -129,7 +154,7 @@ fn do_ranges_overlap(r1: &RangeOp, r2: &RangeOp) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scoring::{SizeBucket, SizeConfig};
+    use crate::scoring::{SizeBucket, SizeConfig, LabelEffect};
 
     #[test]
     fn test_valid_config() {
@@ -138,6 +163,8 @@ mod tests {
             age: Some("+1 per 1h".to_string()),
             approvals: Some("x0.5".to_string()),
             size: None,
+            labels: None,
+            previously_reviewed: None,
         };
         assert!(validate_scoring(&config).is_ok());
     }
@@ -149,6 +176,8 @@ mod tests {
             age: None,
             approvals: None,
             size: None,
+            labels: None,
+            previously_reviewed: None,
         };
         assert!(validate_scoring(&config).is_ok());
     }
@@ -160,6 +189,8 @@ mod tests {
             age: Some("invalid".to_string()),
             approvals: None,
             size: None,
+            labels: None,
+            previously_reviewed: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
@@ -174,6 +205,8 @@ mod tests {
             age: None,
             approvals: None,
             size: None,
+            labels: None,
+            previously_reviewed: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
@@ -188,6 +221,8 @@ mod tests {
             age: None,
             approvals: Some("invalid".to_string()),
             size: None,
+            labels: None,
+            previously_reviewed: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
@@ -207,6 +242,8 @@ mod tests {
                     SizeBucket { range: "<100".to_string(), effect: "bad".to_string() },
                 ],
             }),
+            labels: None,
+            previously_reviewed: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
@@ -221,6 +258,8 @@ mod tests {
             age: Some("bad".to_string()),  // Error 2
             approvals: None,
             size: None,
+            labels: None,
+            previously_reviewed: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
@@ -253,6 +292,8 @@ mod tests {
                     SizeBucket { range: ">=100".to_string(), effect: "x1".to_string() },
                 ],
             }),
+            labels: None,
+            previously_reviewed: None,
         };
         assert!(validate_scoring(&config).is_ok());
     }
@@ -270,6 +311,8 @@ mod tests {
                     SizeBucket { range: ">=100".to_string(), effect: "x1".to_string() },
                 ],
             }),
+            labels: None,
+            previously_reviewed: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
@@ -292,6 +335,8 @@ mod tests {
                     SizeBucket { range: "300-700".to_string(), effect: "x1".to_string() },
                 ],
             }),
+            labels: None,
+            previously_reviewed: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
@@ -312,6 +357,8 @@ mod tests {
                     SizeBucket { range: "300-400".to_string(), effect: "x1".to_string() },
                 ],
             }),
+            labels: None,
+            previously_reviewed: None,
         };
         assert!(validate_scoring(&config).is_ok());
     }
@@ -329,6 +376,8 @@ mod tests {
                     SizeBucket { range: "100-200".to_string(), effect: "x1".to_string() },
                 ],
             }),
+            labels: None,
+            previously_reviewed: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
@@ -349,6 +398,8 @@ mod tests {
                     SizeBucket { range: "<200".to_string(), effect: "x1".to_string() },
                 ],
             }),
+            labels: None,
+            previously_reviewed: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
@@ -369,7 +420,111 @@ mod tests {
                     SizeBucket { range: "<100".to_string(), effect: "x1".to_string() },
                 ],
             }),
+            labels: None,
+            previously_reviewed: None,
         };
         assert!(validate_scoring(&config).is_ok());
+    }
+
+    #[test]
+    fn test_valid_label_config() {
+        let config = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: None,
+            labels: Some(vec![
+                LabelEffect { name: "urgent".to_string(), effect: "+10".to_string() },
+                LabelEffect { name: "wip".to_string(), effect: "x0.5".to_string() },
+            ]),
+            previously_reviewed: None,
+        };
+        assert!(validate_scoring(&config).is_ok());
+    }
+
+    #[test]
+    fn test_invalid_label_effect() {
+        let config = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: None,
+            labels: Some(vec![
+                LabelEffect { name: "urgent".to_string(), effect: "bad".to_string() },
+            ]),
+            previously_reviewed: None,
+        };
+        let result = validate_scoring(&config);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors[0].contains("scoring.labels[0].effect"));
+        assert!(errors[0].contains("bad"));
+    }
+
+    #[test]
+    fn test_empty_label_name() {
+        let config = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: None,
+            labels: Some(vec![
+                LabelEffect { name: "  ".to_string(), effect: "+10".to_string() },
+            ]),
+            previously_reviewed: None,
+        };
+        let result = validate_scoring(&config);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors[0].contains("scoring.labels[0].name"));
+        assert!(errors[0].contains("must not be empty"));
+    }
+
+    #[test]
+    fn test_valid_previously_reviewed() {
+        let config = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: None,
+            labels: None,
+            previously_reviewed: Some("x0.5".to_string()),
+        };
+        assert!(validate_scoring(&config).is_ok());
+    }
+
+    #[test]
+    fn test_invalid_previously_reviewed() {
+        let config = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: None,
+            labels: None,
+            previously_reviewed: Some("invalid".to_string()),
+        };
+        let result = validate_scoring(&config);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors[0].contains("scoring.previously_reviewed"));
+        assert!(errors[0].contains("invalid"));
+    }
+
+    #[test]
+    fn test_multiple_validation_errors_with_new_fields() {
+        let config = ScoringConfig {
+            base_score: Some(-10.0),  // Error 1
+            age: Some("bad".to_string()),  // Error 2
+            approvals: None,
+            size: None,
+            labels: Some(vec![
+                LabelEffect { name: "".to_string(), effect: "bad".to_string() },  // Error 3 & 4
+            ]),
+            previously_reviewed: Some("invalid".to_string()),  // Error 5
+        };
+        let result = validate_scoring(&config);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 5);
     }
 }

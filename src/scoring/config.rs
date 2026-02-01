@@ -1,5 +1,24 @@
 use serde::{Deserialize, Serialize};
 
+/// Label-based scoring effect.
+///
+/// Maps label names to score effects. Multiple matching labels compound.
+///
+/// Example YAML:
+/// ```yaml
+/// labels:
+///   - name: "urgent"
+///     effect: "+10"
+///   - name: "wip"
+///     effect: "x0.5"
+/// ```
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct LabelEffect {
+    pub name: String,
+    pub effect: String,
+}
+
 /// Main scoring configuration.
 ///
 /// Defines how PR scores are calculated. Each factor is optional and can use
@@ -38,6 +57,16 @@ pub struct ScoringConfig {
     /// Size factor: bucket-based with optional file exclusions
     #[serde(default)]
     pub size: Option<SizeConfig>,
+
+    /// Label-based scoring effects (case-insensitive, multiple labels compound)
+    /// Example: [{ name: "urgent", effect: "+10" }]
+    #[serde(default)]
+    pub labels: Option<Vec<LabelEffect>>,
+
+    /// Previously reviewed factor: effect applied when user has reviewed PR
+    /// Example: "x0.5" to deprioritize previously-reviewed PRs
+    #[serde(default)]
+    pub previously_reviewed: Option<String>,
 }
 
 impl Default for ScoringConfig {
@@ -63,6 +92,8 @@ impl Default for ScoringConfig {
                     },
                 ],
             }),
+            labels: None,
+            previously_reviewed: None,
         }
     }
 }
@@ -108,6 +139,8 @@ mod tests {
         assert_eq!(config.age, Some("+1 per 1h".to_string()));
         assert_eq!(config.approvals, Some("+10 per 1".to_string()));
         assert!(config.size.is_some());
+        assert!(config.labels.is_none());
+        assert!(config.previously_reviewed.is_none());
     }
 
     #[test]
@@ -129,6 +162,8 @@ age: "+5 per 1h"
         assert_eq!(config.age, Some("+5 per 1h".to_string()));
         assert!(config.approvals.is_none());
         assert!(config.size.is_none());
+        assert!(config.labels.is_none());
+        assert!(config.previously_reviewed.is_none());
     }
 
     #[test]
@@ -165,6 +200,8 @@ size:
         assert!(config.age.is_none());
         assert!(config.approvals.is_none());
         assert!(config.size.is_none());
+        assert!(config.labels.is_none());
+        assert!(config.previously_reviewed.is_none());
     }
 
     #[test]
@@ -177,5 +214,56 @@ buckets:
         let config: SizeConfig = serde_saphyr::from_str(yaml).unwrap();
         assert!(config.exclude.is_none());
         assert_eq!(config.buckets.len(), 1);
+    }
+
+    #[test]
+    fn test_labels_config_parse() {
+        let yaml = r#"
+labels:
+  - name: "urgent"
+    effect: "+10"
+  - name: "wip"
+    effect: "x0.5"
+"#;
+        let config: ScoringConfig = serde_saphyr::from_str(yaml).unwrap();
+        let labels = config.labels.unwrap();
+        assert_eq!(labels.len(), 2);
+        assert_eq!(labels[0].name, "urgent");
+        assert_eq!(labels[0].effect, "+10");
+        assert_eq!(labels[1].name, "wip");
+        assert_eq!(labels[1].effect, "x0.5");
+    }
+
+    #[test]
+    fn test_previously_reviewed_config_parse() {
+        let yaml = r#"
+previously_reviewed: "x0.5"
+"#;
+        let config: ScoringConfig = serde_saphyr::from_str(yaml).unwrap();
+        assert_eq!(config.previously_reviewed, Some("x0.5".to_string()));
+    }
+
+    #[test]
+    fn test_full_config_with_all_factors() {
+        let yaml = r#"
+base_score: 100
+age: "+1 per 1h"
+approvals: "x2 per 1"
+size:
+  buckets:
+    - range: "<100"
+      effect: "x5"
+labels:
+  - name: "urgent"
+    effect: "+20"
+previously_reviewed: "x0.5"
+"#;
+        let config: ScoringConfig = serde_saphyr::from_str(yaml).unwrap();
+        assert_eq!(config.base_score, Some(100.0));
+        assert_eq!(config.age, Some("+1 per 1h".to_string()));
+        assert_eq!(config.approvals, Some("x2 per 1".to_string()));
+        assert!(config.size.is_some());
+        assert_eq!(config.labels.as_ref().unwrap().len(), 1);
+        assert_eq!(config.previously_reviewed, Some("x0.5".to_string()));
     }
 }
