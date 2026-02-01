@@ -26,3 +26,5 @@ atomic-write-file = "0.2"
 ratatui = "0.30"
 crossterm = { version = "0.29", features = ["event-stream"] }
 futures = "0.3"
+cacache = "13"
+http = "1"
