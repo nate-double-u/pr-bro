@@ -3,71 +3,83 @@ use futures::stream::{FuturesUnordered, StreamExt};
 use octocrab::Octocrab;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio_retry::{strategy::ExponentialBackoff, Retry};
 
 use crate::github::types::PullRequest;
 
-/// Search GitHub for pull requests matching the given query
+/// Search GitHub for pull requests matching the given query.
+/// Auth errors (401 / Bad credentials) fail immediately as a typed AuthError.
+/// Rate limit and permission errors also fail immediately.
+/// Transient/network errors are retried up to 3 times with exponential backoff.
 pub async fn search_prs(client: &Octocrab, query: &str) -> Result<Vec<PullRequest>> {
-    // Retry strategy: exponential backoff with 3 attempts
-    let retry_strategy = ExponentialBackoff::from_millis(100)
-        .max_delay(std::time::Duration::from_secs(5))
-        .take(3);
+    let max_retries = 3;
+    let mut attempt = 0;
 
-    let results = Retry::spawn(retry_strategy, || async {
-        client
-            .search()
-            .issues_and_pull_requests(query)
-            .send()
-            .await
-            .map_err(|e| {
-                // Extract useful error info from octocrab error
+    loop {
+        attempt += 1;
+        match client.search().issues_and_pull_requests(query).send().await {
+            Ok(results) => {
+                let prs: Vec<PullRequest> = results
+                    .items
+                    .into_iter()
+                    .filter(|issue| issue.pull_request.is_some()) // Only PRs, not issues
+                    .filter_map(|issue| {
+                        // Extract owner/repo from html_url
+                        // Format: "https://github.com/owner/repo/pull/123"
+                        let path = issue.html_url.path();
+                        let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+                        let repo = if parts.len() >= 2 {
+                            format!("{}/{}", parts[0], parts[1])
+                        } else {
+                            "unknown/unknown".to_string()
+                        };
+
+                        Some(PullRequest {
+                            title: issue.title,
+                            number: issue.number,
+                            author: issue.user.login.clone(),
+                            repo,
+                            url: issue.html_url.to_string(),
+                            created_at: issue.created_at,
+                            updated_at: issue.updated_at,
+                            additions: 0,  // Search API doesn't include these
+                            deletions: 0,  // Will be populated by enrichment
+                            approvals: 0,  // Requires separate API call
+                            draft: false,  // Search API doesn't expose draft status reliably
+                        })
+                    })
+                    .collect();
+                return Ok(prs);
+            }
+            Err(e) => {
                 let error_str = format!("{:?}", e);
-                if error_str.contains("do not have permission") || error_str.contains("resources do not exist") {
-                    anyhow!("Repository not found or no access. Check repo name and token permissions (needs 'repo' scope for private repos).")
-                } else if error_str.contains("401") || error_str.contains("Bad credentials") {
-                    anyhow!("Authentication failed. Your GitHub token may be invalid or expired.")
-                } else if error_str.contains("rate limit") || error_str.contains("403") {
-                    anyhow!("GitHub API rate limit exceeded. Wait a few minutes and try again.")
-                } else {
-                    anyhow!("GitHub API error: {}", e)
+
+                // Auth errors: fail immediately with typed AuthError (no retry)
+                if error_str.contains("401") || error_str.contains("Bad credentials") {
+                    return Err(crate::fetch::AuthError {
+                        message: "Authentication failed. Your GitHub token may be invalid or expired.".to_string(),
+                    }.into());
                 }
-            })
-    })
-    .await?;
 
-    let prs: Vec<PullRequest> = results
-        .items
-        .into_iter()
-        .filter(|issue| issue.pull_request.is_some()) // Only PRs, not issues
-        .filter_map(|issue| {
-            // Extract owner/repo from html_url
-            // Format: "https://github.com/owner/repo/pull/123"
-            let path = issue.html_url.path();
-            let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-            let repo = if parts.len() >= 2 {
-                format!("{}/{}", parts[0], parts[1])
-            } else {
-                "unknown/unknown".to_string()
-            };
+                // Rate limit: fail immediately (caller handles differently)
+                if error_str.contains("rate limit") || error_str.contains("403") {
+                    return Err(anyhow!("GitHub API rate limit exceeded. Wait a few minutes and try again."));
+                }
 
-            Some(PullRequest {
-                title: issue.title,
-                number: issue.number,
-                author: issue.user.login.clone(),
-                repo,
-                url: issue.html_url.to_string(),
-                created_at: issue.created_at,
-                updated_at: issue.updated_at,
-                additions: 0,  // Search API doesn't include these
-                deletions: 0,  // Will be populated by enrichment
-                approvals: 0,  // Requires separate API call
-                draft: false,  // Search API doesn't expose draft status reliably
-            })
-        })
-        .collect();
+                // Permission errors: fail immediately
+                if error_str.contains("do not have permission") || error_str.contains("resources do not exist") {
+                    return Err(anyhow!("Repository not found or no access. Check repo name and token permissions (needs 'repo' scope for private repos)."));
+                }
 
-    Ok(prs)
+                // Transient errors: retry with backoff
+                if attempt >= max_retries {
+                    return Err(anyhow!("GitHub API error after {} attempts: {}", max_retries, e));
+                }
+
+                let delay = std::time::Duration::from_millis(100 * (1 << (attempt - 1))); // 100ms, 200ms, 400ms
+                tokio::time::sleep(delay).await;
+            }
+        }
+    }
 }
 
 /// Fetch PR details (additions, deletions) from the GitHub API

@@ -6,6 +6,23 @@ use crate::scoring::{ScoringConfig, ScoreResult, calculate_score};
 use crate::snooze::{SnoozeState, filter_active_prs, filter_snoozed_prs};
 use futures::stream::{FuturesUnordered, StreamExt};
 use std::collections::HashSet;
+use std::fmt;
+
+/// Typed error for GitHub authentication failures (401 / Bad credentials).
+/// Callers can downcast `anyhow::Error` to this type to distinguish auth
+/// errors from transient network errors and trigger a token re-prompt.
+#[derive(Debug)]
+pub struct AuthError {
+    pub message: String,
+}
+
+impl fmt::Display for AuthError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for AuthError {}
 
 /// Fetch PRs from all configured queries, deduplicate, score, and split into
 /// active and snoozed lists. Both lists are sorted by score descending.
@@ -55,6 +72,10 @@ pub async fn fetch_and_score_prs(
                 any_succeeded = true;
             }
             Err(e) => {
+                // If it's an auth error, bail immediately (all queries will fail)
+                if e.downcast_ref::<AuthError>().is_some() {
+                    return Err(e);
+                }
                 eprintln!("Query failed: {} - {}",
                     name.as_deref().unwrap_or(&query), e);
             }

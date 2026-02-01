@@ -21,6 +21,24 @@ pub fn prompt_for_token() -> Result<String> {
     Ok(token.to_string())
 }
 
+/// Re-prompts for token when the existing one is rejected by GitHub
+pub async fn reprompt_for_token() -> Result<String> {
+    eprintln!();
+    eprintln!("Your GitHub token was rejected (invalid or expired).");
+    eprintln!("Please provide a new token.");
+    eprintln!();
+
+    let token = prompt_for_token()?;
+
+    // Replace token in keyring
+    store_token(token.clone()).await
+        .context("Failed to store new token in keyring")?;
+
+    eprintln!("New token stored securely in system keyring.");
+
+    Ok(token)
+}
+
 /// Setup token if missing - prompts for token on first run
 /// Returns the token (either existing or newly stored)
 pub async fn setup_token_if_missing() -> Result<String> {

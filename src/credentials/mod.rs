@@ -7,7 +7,7 @@ const SERVICE_NAME: &str = "pr-bro";
 const TOKEN_KEY: &str = "github-token";
 
 // Re-export prompt functions for convenience
-pub use prompt::{prompt_for_token, setup_token_if_missing};
+pub use prompt::{prompt_for_token, reprompt_for_token, setup_token_if_missing};
 
 #[derive(Debug)]
 pub enum CredentialError {
