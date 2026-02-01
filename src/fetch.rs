@@ -3,6 +3,7 @@ use crate::config::Config;
 use crate::github::types::PullRequest;
 use crate::scoring::{ScoringConfig, ScoreResult, calculate_score};
 use crate::snooze::{SnoozeState, filter_active_prs, filter_snoozed_prs};
+use futures::stream::{FuturesUnordered, StreamExt};
 use std::collections::HashSet;
 
 /// Fetch PRs from all configured queries, deduplicate, score, and split into
@@ -17,26 +18,34 @@ pub async fn fetch_and_score_prs(
     snooze_state: &SnoozeState,
     verbose: bool,
 ) -> Result<(Vec<(PullRequest, ScoreResult)>, Vec<(PullRequest, ScoreResult)>)> {
-    // Search PRs for each query
+    // Search PRs for each query in parallel
     let mut all_prs = Vec::new();
     let mut any_succeeded = false;
 
+    let mut futures = FuturesUnordered::new();
     for query_config in &config.queries {
-        if verbose {
-            eprintln!("Searching: {}", query_config.query);
-        }
+        let client = client.clone();
+        let query = query_config.query.clone();
+        let query_name = query_config.name.clone();
+        futures.push(async move {
+            let result = crate::github::search_and_enrich_prs(&client, &query).await;
+            (query_name, query, result)
+        });
+    }
 
-        match crate::github::search_and_enrich_prs(client, &query_config.query).await {
+    while let Some((name, query, result)) = futures.next().await {
+        match result {
             Ok(prs) => {
                 if verbose {
-                    eprintln!("  Found {} PRs", prs.len());
+                    eprintln!("  Found {} PRs for {}", prs.len(),
+                        name.as_deref().unwrap_or(&query));
                 }
                 all_prs.extend(prs);
                 any_succeeded = true;
             }
             Err(e) => {
-                eprintln!("Query failed: {} - {}", query_config.query, e);
-                // Continue with other queries (partial failure)
+                eprintln!("Query failed: {} - {}",
+                    name.as_deref().unwrap_or(&query), e);
             }
         }
     }
