@@ -2,10 +2,10 @@ use anyhow::Result;
 use crate::config::Config;
 use crate::github::cache::CacheConfig;
 use crate::github::types::PullRequest;
-use crate::scoring::{ScoringConfig, ScoreResult, calculate_score};
+use crate::scoring::{ScoreResult, calculate_score};
 use crate::snooze::{SnoozeState, filter_active_prs, filter_snoozed_prs};
 use futures::stream::{FuturesUnordered, StreamExt};
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::fmt;
 
 /// Typed error for GitHub authentication failures (401 / Bad credentials).
@@ -32,7 +32,6 @@ impl std::error::Error for AuthError {}
 pub async fn fetch_and_score_prs(
     client: &octocrab::Octocrab,
     config: &Config,
-    scoring: &ScoringConfig,
     snooze_state: &SnoozeState,
     cache_config: &CacheConfig,
     verbose: bool,
@@ -46,29 +45,33 @@ pub async fn fetch_and_score_prs(
         eprintln!("Cache: {}", cache_status);
     }
 
+    // Resolve global scoring config once (fallback for queries without per-query scoring)
+    let global_scoring = config.scoring.clone().unwrap_or_default();
+
     // Search PRs for each query in parallel
     let mut all_prs = Vec::new();
     let mut any_succeeded = false;
 
     let mut futures = FuturesUnordered::new();
-    for query_config in &config.queries {
+    for (query_index, query_config) in config.queries.iter().enumerate() {
         let client = client.clone();
         let query = query_config.query.clone();
         let query_name = query_config.name.clone();
         futures.push(async move {
             let result = crate::github::search_and_enrich_prs(&client, &query).await;
-            (query_name, query, result)
+            (query_name, query, query_index, result)
         });
     }
 
-    while let Some((name, query, result)) = futures.next().await {
+    while let Some((name, query, query_index, result)) = futures.next().await {
         match result {
             Ok(prs) => {
                 if verbose {
                     eprintln!("  Found {} PRs for {}", prs.len(),
                         name.as_deref().unwrap_or(&query));
                 }
-                all_prs.extend(prs);
+                // Extend with (pr, query_index) pairs to track which query each PR came from
+                all_prs.extend(prs.into_iter().map(|pr| (pr, query_index)));
                 any_succeeded = true;
             }
             Err(e) => {
@@ -88,10 +91,19 @@ pub async fn fetch_and_score_prs(
     }
 
     // Deduplicate PRs by URL (same PR may appear in multiple queries)
+    // First match wins: track both unique PRs and their query index
     let mut seen_urls = HashSet::new();
+    let mut pr_to_query_index = HashMap::new();
     let unique_prs: Vec<_> = all_prs
         .into_iter()
-        .filter(|pr| seen_urls.insert(pr.url.clone()))
+        .filter_map(|(pr, query_idx)| {
+            if seen_urls.insert(pr.url.clone()) {
+                pr_to_query_index.insert(pr.url.clone(), query_idx);
+                Some(pr)
+            } else {
+                None
+            }
+        })
         .collect();
 
     if verbose {
@@ -106,19 +118,27 @@ pub async fn fetch_and_score_prs(
         eprintln!("After filter: {} active, {} snoozed", active_prs.len(), snoozed_prs.len());
     }
 
-    // Score active PRs
+    // Score active PRs (resolve per-query scoring config for each PR)
     let mut active_scored: Vec<_> = active_prs
         .into_iter()
         .map(|pr| {
+            // Look up which query this PR came from and resolve its scoring config
+            let query_idx = pr_to_query_index.get(&pr.url).copied().unwrap_or(0);
+            let scoring = config.queries[query_idx].scoring.as_ref()
+                .unwrap_or(&global_scoring);
             let result = calculate_score(&pr, scoring);
             (pr, result)
         })
         .collect();
 
-    // Score snoozed PRs
+    // Score snoozed PRs (resolve per-query scoring config for each PR)
     let mut snoozed_scored: Vec<_> = snoozed_prs
         .into_iter()
         .map(|pr| {
+            // Look up which query this PR came from and resolve its scoring config
+            let query_idx = pr_to_query_index.get(&pr.url).copied().unwrap_or(0);
+            let scoring = config.queries[query_idx].scoring.as_ref()
+                .unwrap_or(&global_scoring);
             let result = calculate_score(&pr, scoring);
             (pr, result)
         })
