@@ -1,0 +1,54 @@
+use crossterm::event::{KeyEvent, KeyEventKind};
+use futures::StreamExt;
+use tokio::sync::mpsc;
+
+#[derive(Debug, Clone)]
+pub enum Event {
+    Key(KeyEvent),
+    Tick,
+}
+
+pub struct EventHandler {
+    rx: mpsc::UnboundedReceiver<Event>,
+}
+
+impl EventHandler {
+    pub fn new(tick_rate_ms: u64) -> Self {
+        let (tx, rx) = mpsc::unbounded_channel();
+
+        tokio::spawn(async move {
+            let mut reader = crossterm::event::EventStream::new();
+            let mut tick_interval = tokio::time::interval(
+                std::time::Duration::from_millis(tick_rate_ms)
+            );
+
+            loop {
+                tokio::select! {
+                    maybe_event = reader.next() => {
+                        if let Some(Ok(evt)) = maybe_event {
+                            if let crossterm::event::Event::Key(key) = evt {
+                                // Filter for Press only (Windows compatibility)
+                                if key.kind == KeyEventKind::Press {
+                                    if tx.send(Event::Key(key)).is_err() {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ = tick_interval.tick() => {
+                        if tx.send(Event::Tick).is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+
+        EventHandler { rx }
+    }
+
+    pub async fn next(&mut self) -> Event {
+        self.rx.recv().await.unwrap_or(Event::Tick)
+    }
+}
