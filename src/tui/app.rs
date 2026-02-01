@@ -156,4 +156,207 @@ impl App {
     pub fn auto_refresh_interval(&self) -> std::time::Duration {
         std::time::Duration::from_secs(self.config.auto_refresh_interval)
     }
+
+    /// Open the selected PR in the browser
+    pub fn open_selected(&self) -> anyhow::Result<()> {
+        if let Some(pr) = self.selected_pr() {
+            crate::browser::open_url(&pr.url)?;
+        }
+        Ok(())
+    }
+
+    /// Start snooze input mode
+    pub fn start_snooze_input(&mut self) {
+        // Only allow snoozing in Active view with a selected PR
+        if matches!(self.current_view, View::Active) && self.selected_pr().is_some() {
+            self.input_mode = InputMode::SnoozeInput;
+            self.snooze_input.clear();
+        }
+    }
+
+    /// Confirm and apply the snooze input
+    pub fn confirm_snooze_input(&mut self) {
+        // Get selected PR info before mutating
+        let (url, title) = match self.selected_pr() {
+            Some(pr) => (pr.url.clone(), pr.title.clone()),
+            None => {
+                self.input_mode = InputMode::Normal;
+                return;
+            }
+        };
+
+        // Parse duration from input
+        let computed_until = if self.snooze_input.trim().is_empty() {
+            // Empty string = indefinite snooze
+            None
+        } else {
+            // Parse duration string
+            match humantime::parse_duration(&self.snooze_input) {
+                Ok(duration) => {
+                    let until = Utc::now() + chrono::Duration::from_std(duration).unwrap_or_default();
+                    Some(until)
+                }
+                Err(_) => {
+                    self.show_flash(format!("Invalid duration: '{}'", self.snooze_input));
+                    self.input_mode = InputMode::Normal;
+                    self.snooze_input.clear();
+                    return;
+                }
+            }
+        };
+
+        // Apply snooze
+        self.snooze_state.snooze(url.clone(), computed_until);
+
+        // Save to disk
+        if let Err(e) = crate::snooze::save_snooze_state(&self.snooze_path, &self.snooze_state) {
+            self.show_flash(format!("Failed to save snooze state: {}", e));
+            self.input_mode = InputMode::Normal;
+            return;
+        }
+
+        // Push to undo stack
+        self.push_undo(UndoAction::Snoozed {
+            url: url.clone(),
+            title: title.clone(),
+        });
+
+        // Move PR from active to snoozed
+        self.move_pr_between_lists(&url, true);
+
+        // Show flash message
+        self.show_flash(format!("Snoozed: {} (z to undo)", title));
+
+        // Return to normal mode
+        self.input_mode = InputMode::Normal;
+        self.snooze_input.clear();
+    }
+
+    /// Cancel snooze input
+    pub fn cancel_snooze_input(&mut self) {
+        self.input_mode = InputMode::Normal;
+        self.snooze_input.clear();
+    }
+
+    /// Unsnooze the selected PR (only works in Snoozed view)
+    pub fn unsnooze_selected(&mut self) {
+        if !matches!(self.current_view, View::Snoozed) {
+            return;
+        }
+
+        let (url, title, until) = match self.selected_pr() {
+            Some(pr) => {
+                let url = pr.url.clone();
+                let title = pr.title.clone();
+                // Look up snooze entry to get the until time for undo
+                let until = self.snooze_state
+                    .snoozed_entries()
+                    .get(&url)
+                    .and_then(|entry| entry.snooze_until);
+                (url, title, until)
+            }
+            None => return,
+        };
+
+        // Unsnooze
+        self.snooze_state.unsnooze(&url);
+
+        // Save to disk
+        if let Err(e) = crate::snooze::save_snooze_state(&self.snooze_path, &self.snooze_state) {
+            self.show_flash(format!("Failed to save snooze state: {}", e));
+            return;
+        }
+
+        // Push to undo stack
+        self.push_undo(UndoAction::Unsnoozed {
+            url: url.clone(),
+            title: title.clone(),
+            until,
+        });
+
+        // Move PR from snoozed to active
+        self.move_pr_between_lists(&url, false);
+
+        // Show flash message
+        self.show_flash(format!("Unsnoozed: {} (z to undo)", title));
+    }
+
+    /// Undo the last snooze or unsnooze action
+    pub fn undo_last(&mut self) {
+        let action = match self.undo_stack.pop_front() {
+            Some(action) => action,
+            None => {
+                self.show_flash("Nothing to undo".to_string());
+                return;
+            }
+        };
+
+        match action {
+            UndoAction::Snoozed { url, title } => {
+                // Undo a snooze: unsnooze the PR
+                self.snooze_state.unsnooze(&url);
+
+                // Save to disk
+                if let Err(e) = crate::snooze::save_snooze_state(&self.snooze_path, &self.snooze_state) {
+                    self.show_flash(format!("Failed to save snooze state: {}", e));
+                    return;
+                }
+
+                // Move PR back from snoozed to active
+                self.move_pr_between_lists(&url, false);
+
+                self.show_flash(format!("Undid snooze: {}", title));
+            }
+            UndoAction::Unsnoozed { url, title, until } => {
+                // Undo an unsnooze: re-snooze the PR
+                self.snooze_state.snooze(url.clone(), until);
+
+                // Save to disk
+                if let Err(e) = crate::snooze::save_snooze_state(&self.snooze_path, &self.snooze_state) {
+                    self.show_flash(format!("Failed to save snooze state: {}", e));
+                    return;
+                }
+
+                // Move PR back from active to snoozed
+                self.move_pr_between_lists(&url, true);
+
+                self.show_flash(format!("Undid unsnooze: {}", title));
+            }
+        }
+    }
+
+    /// Move a PR between active and snoozed lists
+    ///
+    /// # Arguments
+    /// * `url` - The URL of the PR to move
+    /// * `from_active_to_snoozed` - true to move from active to snoozed, false for the reverse
+    fn move_pr_between_lists(&mut self, url: &str, from_active_to_snoozed: bool) {
+        let (source_list, dest_list) = if from_active_to_snoozed {
+            (&mut self.active_prs, &mut self.snoozed_prs)
+        } else {
+            (&mut self.snoozed_prs, &mut self.active_prs)
+        };
+
+        // Find and remove PR from source list
+        if let Some(pos) = source_list.iter().position(|(pr, _)| pr.url == url) {
+            let pr_entry = source_list.remove(pos);
+
+            // Insert into destination list, maintaining score-descending sort
+            let insert_pos = dest_list
+                .iter()
+                .position(|(_, score)| score.score < pr_entry.1.score)
+                .unwrap_or(dest_list.len());
+            dest_list.insert(insert_pos, pr_entry);
+
+            // Fix table selection to stay valid
+            let current_list = self.current_prs();
+            if current_list.is_empty() {
+                self.table_state.select(None);
+            } else if let Some(selected) = self.table_state.selected() {
+                if selected >= current_list.len() {
+                    self.table_state.select(Some(current_list.len() - 1));
+                }
+            }
+        }
+    }
 }

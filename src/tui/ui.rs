@@ -1,6 +1,6 @@
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Cell, Paragraph, Row, Table, Tabs};
-use crate::tui::app::{App, View};
+use ratatui::widgets::{Block, Cell, Clear, Paragraph, Row, Table, Tabs};
+use crate::tui::app::{App, InputMode, View};
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
     // Layout: Title(1) + Tabs(1) + Table(fill) + Status(1)
@@ -16,6 +16,11 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     render_tabs(frame, chunks[1], app);
     render_table(frame, chunks[2], app);
     render_status_bar(frame, chunks[3], app);
+
+    // Render snooze popup overlay if in snooze input mode
+    if matches!(app.input_mode, InputMode::SnoozeInput) {
+        render_snooze_popup(frame, app);
+    }
 }
 
 fn render_title(frame: &mut Frame, area: Rect) {
@@ -172,5 +177,55 @@ fn truncate_title(title: &str, max_width: usize) -> String {
         format!("{}...", chars[..max_width - 3].iter().collect::<String>())
     } else {
         chars[..max_width].iter().collect()
+    }
+}
+
+/// Render the snooze duration input popup
+fn render_snooze_popup(frame: &mut Frame, app: &App) {
+    let popup_area = centered_rect_fixed(40, 5, frame.area());
+
+    // Clear the background
+    frame.render_widget(Clear, popup_area);
+
+    // Render the popup border
+    let block = Block::bordered().title("Snooze Duration");
+    frame.render_widget(block.clone(), popup_area);
+
+    // Get inner area (inside the border)
+    let inner = block.inner(popup_area);
+
+    // Split inner area for input and help text
+    let chunks = Layout::vertical([
+        Constraint::Length(1),  // Input line
+        Constraint::Length(1),  // Help text
+    ])
+    .split(inner);
+
+    // Render input with cursor
+    let input_text = format!("{}|", app.snooze_input);
+    let input = Paragraph::new(input_text);
+    frame.render_widget(input, chunks[0]);
+
+    // Render help text
+    let help = Paragraph::new("Enter: confirm | Esc: cancel | empty = indefinite")
+        .style(Style::default().fg(Color::DarkGray));
+    frame.render_widget(help, chunks[1]);
+}
+
+/// Create a centered rectangle with fixed width and height
+fn centered_rect_fixed(width: u16, height: u16, area: Rect) -> Rect {
+    // Clamp dimensions to area bounds
+    let width = width.min(area.width);
+    let height = height.min(area.height);
+
+    // Calculate centered position
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+
+    Rect {
+        x,
+        y,
+        width,
+        height,
     }
 }
