@@ -10,7 +10,7 @@ use event::{Event, EventHandler};
 
 pub async fn run_tui(
     mut app: App,
-    client: octocrab::Octocrab,
+    mut client: octocrab::Octocrab,
     scoring_config: ScoringConfig,
 ) -> anyhow::Result<()> {
     // Init terminal (sets up panic hooks automatically)
@@ -61,7 +61,49 @@ pub async fn run_tui(
                         app.update_prs(active, snoozed, rate_limit);
                     }
                     Ok(Err(e)) => {
-                        app.show_flash(format!("Refresh failed: {}", e));
+                        if e.downcast_ref::<crate::fetch::AuthError>().is_some() {
+                            // Auth failure: restore terminal, re-prompt, re-init
+                            ratatui::restore();
+
+                            match crate::credentials::reprompt_for_token().await {
+                                Ok(new_token) => {
+                                    // Recreate client with new token
+                                    match crate::github::create_client(
+                                        &new_token,
+                                        &app.cache_config,
+                                    ) {
+                                        Ok((new_client, new_cache_handle)) => {
+                                            client = new_client;
+                                            if new_cache_handle.is_some() {
+                                                app.cache_handle = new_cache_handle;
+                                            }
+
+                                            // Re-init terminal
+                                            terminal = ratatui::init();
+
+                                            // Trigger immediate refresh with new client
+                                            app.needs_refresh = true;
+                                            app.show_flash(
+                                                "Re-authenticated. Refreshing...".to_string(),
+                                            );
+                                        }
+                                        Err(ce) => {
+                                            // Re-init terminal even on failure (must restore TUI)
+                                            terminal = ratatui::init();
+                                            app.show_flash(format!("Re-auth failed: {}", ce));
+                                        }
+                                    }
+                                }
+                                Err(pe) => {
+                                    // User cancelled or error during prompt
+                                    // Re-init terminal (must restore TUI)
+                                    terminal = ratatui::init();
+                                    app.show_flash(format!("Re-auth cancelled: {}", pe));
+                                }
+                            }
+                        } else {
+                            app.show_flash(format!("Refresh failed: {}", e));
+                        }
                     }
                     Err(e) => {
                         app.show_flash(format!("Refresh task panicked: {}", e));

@@ -217,21 +217,52 @@ async fn main() {
         std::process::exit(EXIT_SUCCESS);
     }
 
-    // Non-interactive path: fetch and score PRs before outputting
-    let (active_scored, snoozed_scored, _rate_limit) = match pr_bro::fetch::fetch_and_score_prs(
-        &client,
-        &config,
-        &effective_scoring,
-        &snooze_state,
-        &cache_config,
-        cli.verbose,
-    )
-    .await
-    {
-        Ok(result) => result,
-        Err(e) => {
-            eprintln!("Failed to fetch PRs: {}", e);
-            std::process::exit(EXIT_NETWORK);
+    // Non-interactive path: fetch and score PRs, with auth re-prompt on failure
+    let mut current_client = client;
+    let (active_scored, snoozed_scored, _rate_limit) = loop {
+        match pr_bro::fetch::fetch_and_score_prs(
+            &current_client,
+            &config,
+            &effective_scoring,
+            &snooze_state,
+            &cache_config,
+            cli.verbose,
+        )
+        .await
+        {
+            Ok(result) => break result,
+            Err(e) => {
+                // Check if it's an auth error
+                if e.downcast_ref::<pr_bro::fetch::AuthError>().is_some() {
+                    eprintln!("Authentication failed: {}", e);
+
+                    // Re-prompt for token
+                    let new_token = match pr_bro::credentials::reprompt_for_token().await {
+                        Ok(t) => t,
+                        Err(e) => {
+                            eprintln!("Failed to get new token: {}", e);
+                            std::process::exit(EXIT_AUTH);
+                        }
+                    };
+
+                    // Recreate client with new token
+                    current_client = match pr_bro::github::create_client(&new_token, &cache_config)
+                    {
+                        Ok((c, _handle)) => c,
+                        Err(e) => {
+                            eprintln!("Failed to create GitHub client: {}", e);
+                            std::process::exit(EXIT_NETWORK);
+                        }
+                    };
+
+                    // Loop will retry with new client
+                    continue;
+                }
+
+                // Non-auth error: exit immediately
+                eprintln!("Failed to fetch PRs: {}", e);
+                std::process::exit(EXIT_NETWORK);
+            }
         }
     };
 
