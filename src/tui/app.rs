@@ -359,4 +359,68 @@ impl App {
             }
         }
     }
+
+    /// Toggle between Active and Snoozed views
+    pub fn toggle_view(&mut self) {
+        self.current_view = match self.current_view {
+            View::Active => View::Snoozed,
+            View::Snoozed => View::Active,
+        };
+
+        // Reset selection to first item in the new view, or None if empty
+        let prs = self.current_prs();
+        if prs.is_empty() {
+            self.table_state.select(None);
+        } else {
+            self.table_state.select(Some(0));
+        }
+    }
+
+    /// Show help overlay
+    pub fn show_help(&mut self) {
+        self.input_mode = InputMode::Help;
+    }
+
+    /// Dismiss help overlay
+    pub fn dismiss_help(&mut self) {
+        self.input_mode = InputMode::Normal;
+    }
+
+    /// Update PRs with fresh data from fetch
+    pub fn update_prs(
+        &mut self,
+        active: Vec<(PullRequest, ScoreResult)>,
+        snoozed: Vec<(PullRequest, ScoreResult)>,
+    ) {
+        // Replace PR lists
+        self.active_prs = active;
+        self.snoozed_prs = snoozed;
+
+        // Preserve selection if possible
+        let current_list = self.current_prs();
+        if current_list.is_empty() {
+            self.table_state.select(None);
+        } else if let Some(selected) = self.table_state.selected() {
+            // Clamp to new list length
+            if selected >= current_list.len() {
+                self.table_state.select(Some(current_list.len() - 1));
+            }
+        } else {
+            // No selection before, select first if list is non-empty
+            self.table_state.select(Some(0));
+        }
+
+        // Reload snooze state from disk (in case it was modified externally)
+        if let Ok(loaded_state) = crate::snooze::load_snooze_state(&self.snooze_path) {
+            self.snooze_state = loaded_state;
+        }
+
+        // Update refresh timestamp
+        self.last_refresh = Instant::now();
+
+        // Show flash message
+        let active_count = self.active_prs.len();
+        let snoozed_count = self.snoozed_prs.len();
+        self.show_flash(format!("Refreshed ({} active, {} snoozed)", active_count, snoozed_count));
+    }
 }

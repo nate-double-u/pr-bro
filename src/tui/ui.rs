@@ -17,9 +17,11 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     render_table(frame, chunks[2], app);
     render_status_bar(frame, chunks[3], app);
 
-    // Render snooze popup overlay if in snooze input mode
-    if matches!(app.input_mode, InputMode::SnoozeInput) {
-        render_snooze_popup(frame, app);
+    // Render overlays based on input mode
+    match app.input_mode {
+        InputMode::SnoozeInput => render_snooze_popup(frame, app),
+        InputMode::Help => render_help_popup(frame),
+        InputMode::Normal => {}
     }
 }
 
@@ -121,7 +123,11 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
             format!("refreshed {}m ago", elapsed.as_secs() / 60)
         };
 
-        let hints = "j/k:nav Enter:open s:snooze ?:help q:quit";
+        // Context-aware hints based on current view
+        let hints = match app.current_view {
+            View::Active => "j/k:nav Enter:open s:snooze Tab:snoozed ?:help q:quit",
+            View::Snoozed => "j/k:nav Enter:open u:unsnooze Tab:active ?:help q:quit",
+        };
 
         Line::from(vec![
             Span::styled(count, Style::default().fg(Color::DarkGray)),
@@ -228,4 +234,70 @@ fn centered_rect_fixed(width: u16, height: u16, area: Rect) -> Rect {
         width,
         height,
     }
+}
+
+/// Render the help overlay popup
+fn render_help_popup(frame: &mut Frame) {
+    let popup_area = centered_rect_fixed(50, 16, frame.area());
+
+    // Clear the background
+    frame.render_widget(Clear, popup_area);
+
+    // Render the popup border
+    let block = Block::bordered().title(" Keyboard Shortcuts ");
+    frame.render_widget(block.clone(), popup_area);
+
+    // Get inner area (inside the border)
+    let inner = block.inner(popup_area);
+
+    // Build help text with two-column layout
+    let help_lines = vec![
+        Line::from(vec![
+            Span::styled("j / Down      ", Style::default().fg(Color::Cyan).bold()),
+            Span::raw("Move down"),
+        ]),
+        Line::from(vec![
+            Span::styled("k / Up        ", Style::default().fg(Color::Cyan).bold()),
+            Span::raw("Move up"),
+        ]),
+        Line::from(vec![
+            Span::styled("Enter / o     ", Style::default().fg(Color::Cyan).bold()),
+            Span::raw("Open PR in browser"),
+        ]),
+        Line::from(vec![
+            Span::styled("s             ", Style::default().fg(Color::Cyan).bold()),
+            Span::raw("Snooze PR"),
+        ]),
+        Line::from(vec![
+            Span::styled("u             ", Style::default().fg(Color::Cyan).bold()),
+            Span::raw("Unsnooze PR"),
+        ]),
+        Line::from(vec![
+            Span::styled("z             ", Style::default().fg(Color::Cyan).bold()),
+            Span::raw("Undo last action"),
+        ]),
+        Line::from(vec![
+            Span::styled("Tab           ", Style::default().fg(Color::Cyan).bold()),
+            Span::raw("Toggle Active/Snoozed"),
+        ]),
+        Line::from(vec![
+            Span::styled("r             ", Style::default().fg(Color::Cyan).bold()),
+            Span::raw("Refresh PRs"),
+        ]),
+        Line::from(vec![
+            Span::styled("?             ", Style::default().fg(Color::Cyan).bold()),
+            Span::raw("Show/hide this help"),
+        ]),
+        Line::from(vec![
+            Span::styled("q / Ctrl-c    ", Style::default().fg(Color::Cyan).bold()),
+            Span::raw("Quit"),
+        ]),
+        Line::from(""),
+        Line::from(
+            Span::styled("Press any key to close", Style::default().fg(Color::DarkGray))
+        ),
+    ];
+
+    let help_text = Paragraph::new(help_lines);
+    frame.render_widget(help_text, inner);
 }
