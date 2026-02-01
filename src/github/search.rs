@@ -47,6 +47,7 @@ pub async fn search_prs(client: &Octocrab, query: &str) -> Result<Vec<PullReques
                             draft: false,  // Search API doesn't expose draft status reliably
                             labels: issue.labels.iter().map(|l| l.name.clone()).collect(),
                             user_has_reviewed: false, // Will be populated by enrichment
+                            filtered_size: None, // Will be set by enrich_pr if exclude patterns configured
                         })
                     })
                     .collect();
@@ -136,8 +137,63 @@ async fn fetch_pr_reviews(
     Ok((approved_count, user_has_reviewed))
 }
 
+/// Fetch per-file diff data for a PR with pagination.
+/// Returns a list of (filename, additions, deletions) tuples.
+async fn fetch_pr_file_list(
+    client: &Octocrab,
+    owner: &str,
+    repo: &str,
+    number: u64,
+) -> Result<Vec<(String, u64, u64)>> {
+    let page = client
+        .pulls(owner, repo)
+        .list_files(number)
+        .await
+        .context("Failed to fetch PR file list")?;
+
+    let all_files = client
+        .all_pages(page)
+        .await
+        .context("Failed to paginate PR file list")?;
+
+    Ok(all_files
+        .into_iter()
+        .map(|f| (f.filename, f.additions, f.deletions))
+        .collect())
+}
+
+/// Filter files by basename glob matching and compute total size of non-excluded files.
+fn apply_size_exclusions(
+    files: &[(String, u64, u64)],
+    exclude_patterns: &[String],
+) -> Result<u64> {
+    let compiled: Vec<glob::Pattern> = exclude_patterns
+        .iter()
+        .map(|p| glob::Pattern::new(p).context(format!("Invalid glob pattern: {}", p)))
+        .collect::<Result<Vec<_>>>()?;
+
+    let total = files
+        .iter()
+        .filter(|(filename, _, _)| {
+            let basename = std::path::Path::new(filename)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(filename);
+            !compiled.iter().any(|pat| pat.matches(basename))
+        })
+        .map(|(_, additions, deletions)| additions + deletions)
+        .sum();
+
+    Ok(total)
+}
+
 /// Enrich a PR with detailed information (size and approvals)
-async fn enrich_pr(client: &Octocrab, pr: &mut PullRequest, auth_username: Option<&str>) -> Result<()> {
+async fn enrich_pr(
+    client: &Octocrab,
+    pr: &mut PullRequest,
+    auth_username: Option<&str>,
+    exclude_patterns: &Option<Vec<String>>,
+) -> Result<()> {
     // Parse owner/repo from pr.repo field
     let parts: Vec<&str> = pr.repo.split('/').collect();
     if parts.len() != 2 {
@@ -156,6 +212,28 @@ async fn enrich_pr(client: &Octocrab, pr: &mut PullRequest, auth_username: Optio
             pr.deletions = deletions;
             pr.approvals = approvals;
             pr.user_has_reviewed = user_has_reviewed;
+
+            // Conditionally fetch per-file data and apply size exclusions
+            if let Some(ref patterns) = exclude_patterns {
+                if !patterns.is_empty() {
+                    match fetch_pr_file_list(client, owner, repo_name, pr.number).await {
+                        Ok(files) => {
+                            match apply_size_exclusions(&files, patterns) {
+                                Ok(filtered) => pr.filtered_size = Some(filtered),
+                                Err(e) => {
+                                    eprintln!("Warning: Failed to apply size exclusions for PR {}: {}", pr.number, e);
+                                    // Leave filtered_size as None — fallback to aggregate size
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Warning: Failed to fetch file list for PR {}: {}", pr.number, e);
+                            // Leave filtered_size as None — fallback to aggregate size
+                        }
+                    }
+                }
+            }
+
             Ok(())
         }
         Err(e) => {
@@ -172,12 +250,13 @@ async fn enrich_pr_with_rate_limit_check(
     mut pr: PullRequest,
     rate_limited: Arc<AtomicBool>,
     auth_username: Option<String>,
+    exclude_patterns: Option<Vec<String>>,
 ) -> PullRequest {
     if rate_limited.load(Ordering::Relaxed) {
         return pr; // Skip enrichment if rate limited
     }
 
-    match enrich_pr(&client, &mut pr, auth_username.as_deref()).await {
+    match enrich_pr(&client, &mut pr, auth_username.as_deref(), &exclude_patterns).await {
         Ok(_) => {}
         Err(e) => {
             let err_str = e.to_string();
@@ -193,7 +272,12 @@ async fn enrich_pr_with_rate_limit_check(
 }
 
 /// Search and enrich PRs with full details
-pub async fn search_and_enrich_prs(client: &Octocrab, query: &str, auth_username: Option<&str>) -> Result<Vec<PullRequest>> {
+pub async fn search_and_enrich_prs(
+    client: &Octocrab,
+    query: &str,
+    auth_username: Option<&str>,
+    exclude_patterns: Option<Vec<String>>,
+) -> Result<Vec<PullRequest>> {
     let prs = search_prs(client, query).await?;
 
     // Enrich PRs with bounded concurrency
@@ -214,6 +298,7 @@ pub async fn search_and_enrich_prs(client: &Octocrab, query: &str, auth_username
                 pr,
                 rate_limited.clone(),
                 auth_username.map(|s| s.to_string()),
+                exclude_patterns.clone(),
             ));
         }
     }
@@ -230,6 +315,7 @@ pub async fn search_and_enrich_prs(client: &Octocrab, query: &str, auth_username
                     next_pr,
                     rate_limited.clone(),
                     auth_username.map(|s| s.to_string()),
+                    exclude_patterns.clone(),
                 ));
             }
         }

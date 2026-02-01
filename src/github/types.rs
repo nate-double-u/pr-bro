@@ -15,6 +15,7 @@ pub struct PullRequest {
     pub draft: bool,
     pub labels: Vec<String>,    // GitHub label names on this PR
     pub user_has_reviewed: bool, // Whether the authenticated user has submitted a review
+    pub filtered_size: Option<u64>, // Size after applying exclude patterns (if configured)
 }
 
 impl PullRequest {
@@ -23,9 +24,9 @@ impl PullRequest {
         Utc::now() - self.created_at
     }
 
-    /// Calculate total size (additions + deletions)
+    /// Calculate total size, using filtered size if available (exclude patterns applied)
     pub fn size(&self) -> u64 {
-        self.additions + self.deletions
+        self.filtered_size.unwrap_or(self.additions + self.deletions)
     }
 
     /// Return a short reference in the format "owner/repo#123"

@@ -61,7 +61,7 @@ pub async fn fetch_and_score_prs(
         let query_name = query_config.name.clone();
         let auth_username_clone = auth_username_owned.clone();
         futures.push(async move {
-            let result = crate::github::search_and_enrich_prs(&client, &query, auth_username_clone.as_deref()).await;
+            let result = crate::github::search_and_enrich_prs(&client, &query, auth_username_clone.as_deref(), None).await;
             (query_name, query, query_index, result)
         });
     }

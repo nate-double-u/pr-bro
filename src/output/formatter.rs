@@ -259,6 +259,7 @@ mod tests {
             draft: false,
             labels: vec![],
             user_has_reviewed: false,
+            filtered_size: None,
         }
     }
 
