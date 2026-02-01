@@ -176,7 +176,11 @@ async fn main() {
     };
 
     if cli.verbose {
-        eprintln!("Token retrieved from keyring");
+        if pr_bro::credentials::get_token_from_env().is_some() {
+            eprintln!("Token retrieved from {} env var", pr_bro::credentials::ENV_TOKEN_VAR);
+        } else {
+            eprintln!("Token retrieved from system keyring");
+        }
     }
 
     // Create cache config
