@@ -218,7 +218,7 @@ async fn main() {
     }
 
     // Non-interactive path: fetch and score PRs before outputting
-    let (active_scored, snoozed_scored) = match pr_bro::fetch::fetch_and_score_prs(
+    let (active_scored, snoozed_scored, _rate_limit) = match pr_bro::fetch::fetch_and_score_prs(
         &client,
         &config,
         &effective_scoring,

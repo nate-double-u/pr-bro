@@ -58,6 +58,7 @@ pub struct App {
     pub verbose: bool,
     pub is_loading: bool,
     pub spinner_frame: usize,
+    pub rate_limit_remaining: Option<u64>,
 }
 
 impl App {
@@ -97,6 +98,7 @@ impl App {
             verbose,
             is_loading: false,
             spinner_frame: 0,
+            rate_limit_remaining: None,
         }
     }
 
@@ -131,6 +133,7 @@ impl App {
             verbose,
             is_loading: true,
             spinner_frame: 0,
+            rate_limit_remaining: None,
         }
     }
 
@@ -439,10 +442,14 @@ impl App {
         &mut self,
         active: Vec<(PullRequest, ScoreResult)>,
         snoozed: Vec<(PullRequest, ScoreResult)>,
+        rate_limit_remaining: Option<u64>,
     ) {
         // Replace PR lists
         self.active_prs = active;
         self.snoozed_prs = snoozed;
+
+        // Update rate limit info
+        self.rate_limit_remaining = rate_limit_remaining;
 
         // Preserve selection if possible
         let current_list = self.current_prs();

@@ -25,4 +25,9 @@ impl PullRequest {
     pub fn size(&self) -> u64 {
         self.additions + self.deletions
     }
+
+    /// Return a short reference in the format "owner/repo#123"
+    pub fn short_ref(&self) -> String {
+        format!("{}#{}", self.repo, self.number)
+    }
 }

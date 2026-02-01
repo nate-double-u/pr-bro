@@ -19,7 +19,7 @@ pub async fn fetch_and_score_prs(
     snooze_state: &SnoozeState,
     cache_config: &CacheConfig,
     verbose: bool,
-) -> Result<(Vec<(PullRequest, ScoreResult)>, Vec<(PullRequest, ScoreResult)>)> {
+) -> Result<(Vec<(PullRequest, ScoreResult)>, Vec<(PullRequest, ScoreResult)>, Option<u64>)> {
     if verbose {
         let cache_status = if cache_config.enabled {
             "enabled"
@@ -117,5 +117,11 @@ pub async fn fetch_and_score_prs(
     active_scored.sort_by(sort_fn);
     snoozed_scored.sort_by(sort_fn);
 
-    Ok((active_scored, snoozed_scored))
+    // Fetch rate limit info (best-effort, don't fail the whole fetch if unavailable)
+    let rate_limit_remaining = match client.ratelimit().get().await {
+        Ok(rate_limit) => Some(rate_limit.resources.core.remaining as u64),
+        Err(_) => None,
+    };
+
+    Ok((active_scored, snoozed_scored, rate_limit_remaining))
 }

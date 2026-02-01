@@ -57,8 +57,8 @@ pub async fn run_tui(
             if handle.is_finished() {
                 let handle = pending_fetch.take().unwrap();
                 match handle.await {
-                    Ok(Ok((active, snoozed))) => {
-                        app.update_prs(active, snoozed);
+                    Ok(Ok((active, snoozed, rate_limit))) => {
+                        app.update_prs(active, snoozed, rate_limit);
                     }
                     Ok(Err(e)) => {
                         app.show_flash(format!("Refresh failed: {}", e));
