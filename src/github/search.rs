@@ -1,5 +1,8 @@
 use anyhow::{anyhow, Context, Result};
+use futures::stream::{FuturesUnordered, StreamExt};
 use octocrab::Octocrab;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tokio_retry::{strategy::ExponentialBackoff, Retry};
 
 use crate::github::types::PullRequest;
@@ -140,26 +143,74 @@ async fn enrich_pr(client: &Octocrab, pr: &mut PullRequest) -> Result<()> {
     }
 }
 
-/// Search and enrich PRs with full details
-pub async fn search_and_enrich_prs(client: &Octocrab, query: &str) -> Result<Vec<PullRequest>> {
-    let mut prs = search_prs(client, query).await?;
+/// Helper function for concurrent PR enrichment
+async fn enrich_pr_with_rate_limit_check(
+    client: Octocrab,
+    mut pr: PullRequest,
+    rate_limited: Arc<AtomicBool>,
+) -> PullRequest {
+    if rate_limited.load(Ordering::Relaxed) {
+        return pr; // Skip enrichment if rate limited
+    }
 
-    // Enrich each PR with details
-    // If we hit rate limits, we'll stop enriching but keep the PRs we have
-    for pr in &mut prs {
-        match enrich_pr(client, pr).await {
-            Ok(_) => {}
-            Err(e) => {
-                // Check if it's a rate limit error
-                if e.to_string().contains("rate limit") || e.to_string().contains("403") {
-                    eprintln!("Warning: Rate limit hit during enrichment. Returning partial results.");
-                    break;
-                }
-                // For other errors, continue trying the rest
+    match enrich_pr(&client, &mut pr).await {
+        Ok(_) => {}
+        Err(e) => {
+            let err_str = e.to_string();
+            if err_str.contains("rate limit") || err_str.contains("403") {
+                eprintln!("Warning: Rate limit hit during enrichment. Returning partial results.");
+                rate_limited.store(true, Ordering::Relaxed);
+            } else {
                 eprintln!("Warning: Failed to enrich PR {}: {}", pr.number, e);
             }
         }
     }
+    pr
+}
 
-    Ok(prs)
+/// Search and enrich PRs with full details
+pub async fn search_and_enrich_prs(client: &Octocrab, query: &str) -> Result<Vec<PullRequest>> {
+    let prs = search_prs(client, query).await?;
+
+    // Enrich PRs with bounded concurrency
+    const MAX_CONCURRENT_ENRICHMENTS: usize = 10;
+
+    // Rate limit flag shared across concurrent tasks
+    let rate_limited = Arc::new(AtomicBool::new(false));
+
+    let mut futures = FuturesUnordered::new();
+    let mut prs_iter = prs.into_iter();
+    let mut enriched_prs = Vec::new();
+
+    // Fill initial batch
+    for _ in 0..MAX_CONCURRENT_ENRICHMENTS {
+        if let Some(pr) = prs_iter.next() {
+            futures.push(enrich_pr_with_rate_limit_check(
+                client.clone(),
+                pr,
+                rate_limited.clone(),
+            ));
+        }
+    }
+
+    // Process results and feed new tasks
+    while let Some(pr) = futures.next().await {
+        enriched_prs.push(pr);
+
+        // Add next PR if not rate limited
+        if !rate_limited.load(Ordering::Relaxed) {
+            if let Some(next_pr) = prs_iter.next() {
+                futures.push(enrich_pr_with_rate_limit_check(
+                    client.clone(),
+                    next_pr,
+                    rate_limited.clone(),
+                ));
+            }
+        }
+    }
+
+    // Add any remaining unenriched PRs (if rate limited, remaining weren't submitted)
+    enriched_prs.extend(prs_iter);
+
+    Ok(enriched_prs)
 }
