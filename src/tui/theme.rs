@@ -42,3 +42,19 @@ pub const ROW_SELECTED: Style = Style::new().reversed();
 
 // General colors
 pub const MUTED: Color = Color::DarkGray;  // For secondary text
+
+// Title bar colors
+pub const TITLE_COLOR: Color = Color::Cyan;  // Accent color for app name
+
+// Tab colors
+pub const TAB_ACTIVE_STYLE: Style = Style::new().fg(Color::Cyan).bold();
+pub const TAB_INACTIVE_STYLE: Style = Style::new().fg(Color::DarkGray);
+
+// Status bar colors
+pub const STATUS_BAR_BG: Color = Color::Indexed(236);  // Subtle dark background
+pub const STATUS_KEY_COLOR: Color = Color::Cyan;        // Keyboard shortcut hints
+pub const FLASH_SUCCESS: Color = Color::Green;          // Positive flash messages
+pub const FLASH_ERROR: Color = Color::Red;              // Error flash messages
+
+// Divider and separator colors
+pub const DIVIDER_COLOR: Color = Color::Indexed(238);  // Subtle line color

@@ -43,7 +43,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 
 fn render_title(frame: &mut Frame, area: Rect, app: &App) {
     // Build title with rate limit on the right
-    let mut spans = vec![Span::styled("PR Bro", theme::TITLE_STYLE)];
+    let mut spans = vec![Span::styled("PR Bro", Style::default().fg(theme::TITLE_COLOR).bold())];
 
     // Add rate limit info on the right if available
     if let Some(remaining) = app.rate_limit_remaining {
@@ -70,7 +70,8 @@ fn render_tabs(frame: &mut Frame, area: Rect, app: &App) {
 
     let tabs = Tabs::new(titles)
         .select(selected)
-        .highlight_style(theme::TAB_ACTIVE)
+        .style(Style::default().fg(theme::MUTED))
+        .highlight_style(Style::default().fg(theme::TITLE_COLOR).bold().reversed())
         .divider(" | ");
 
     frame.render_widget(tabs, area);
@@ -150,8 +151,16 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
 
 fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
     let text = if let Some((ref msg, _)) = app.flash_message {
-        // Show flash message
-        Line::from(msg.clone())
+        // Show flash message with color based on message type
+        let msg_color = if msg.starts_with("Failed") || msg.starts_with("Error") || msg.contains("cancelled") {
+            theme::FLASH_ERROR
+        } else if msg.starts_with("Snoozed:") || msg.starts_with("Unsnoozed:") ||
+                  msg.starts_with("Refreshed") || msg.starts_with("Opened:") {
+            theme::FLASH_SUCCESS
+        } else {
+            Color::White  // Default for unknown message types
+        };
+        Line::from(Span::styled(msg.clone(), Style::default().fg(msg_color)))
     } else {
         // Show normal status
         let prs = app.current_prs();
@@ -169,24 +178,57 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
             format!("refreshed {}m ago", elapsed.as_secs() / 60)
         };
 
-        // Context-aware hints based on current view
+        // Build hints with colored shortcut keys
+        let mut hint_spans = Vec::new();
         let hints = match app.current_view {
-            View::Active => "j/k:nav Enter:open s:snooze r:refresh Tab:snoozed ?:help q:quit",
-            View::Snoozed => "j/k:nav Enter:open u:unsnooze r:refresh Tab:active ?:help q:quit",
+            View::Active => vec![
+                ("j", "/", "k", ":nav "),
+                ("Enter", "", "", ":open "),
+                ("s", "", "", ":snooze "),
+                ("r", "", "", ":refresh "),
+                ("Tab", "", "", ":snoozed "),
+                ("?", "", "", ":help "),
+                ("q", "", "", ":quit"),
+            ],
+            View::Snoozed => vec![
+                ("j", "/", "k", ":nav "),
+                ("Enter", "", "", ":open "),
+                ("u", "", "", ":unsnooze "),
+                ("r", "", "", ":refresh "),
+                ("Tab", "", "", ":active "),
+                ("?", "", "", ":help "),
+                ("q", "", "", ":quit"),
+            ],
         };
 
-        Line::from(vec![
+        for (i, (key1, sep, key2, label)) in hints.iter().enumerate() {
+            if i > 0 {
+                hint_spans.push(Span::raw(" "));
+            }
+            hint_spans.push(Span::styled(*key1, Style::default().fg(theme::STATUS_KEY_COLOR)));
+            if !sep.is_empty() {
+                hint_spans.push(Span::raw(*sep));
+                hint_spans.push(Span::styled(*key2, Style::default().fg(theme::STATUS_KEY_COLOR)));
+            }
+            hint_spans.push(Span::raw(*label));
+        }
+
+        let mut spans = vec![
             Span::styled(count, Style::default().fg(theme::MUTED)),
             Span::raw(" "),
             Span::styled(view_mode, Style::default().fg(theme::MUTED)),
             Span::raw(" "),
             Span::styled(refresh_time, Style::default().fg(theme::MUTED)),
             Span::raw("  "),
-            Span::raw(hints),
-        ])
+        ];
+        spans.extend(hint_spans);
+        Line::from(spans)
     };
 
-    frame.render_widget(Paragraph::new(text), area);
+    frame.render_widget(
+        Paragraph::new(text).style(Style::default().bg(theme::STATUS_BAR_BG)),
+        area
+    );
 }
 
 fn format_score(score: f64, incomplete: bool) -> String {
