@@ -2,6 +2,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::scoring::ScoringConfig;
 
+fn default_refresh_interval() -> u64 {
+    300
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
     /// Global scoring configuration (applies to all queries unless overridden)
@@ -9,6 +13,10 @@ pub struct Config {
     pub scoring: Option<ScoringConfig>,
 
     pub queries: Vec<QueryConfig>,
+
+    /// Auto-refresh interval in seconds (defaults to 300 = 5 minutes)
+    #[serde(default = "default_refresh_interval")]
+    pub auto_refresh_interval: u64,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

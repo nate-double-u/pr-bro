@@ -1,7 +1,9 @@
 pub mod browser;
 pub mod config;
 pub mod credentials;
+pub mod fetch;
 pub mod github;
 pub mod output;
 pub mod scoring;
 pub mod snooze;
+pub mod tui;
