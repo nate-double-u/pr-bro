@@ -121,14 +121,27 @@ async fn main() {
         }
     }
 
-    // Validate scoring config at startup
-    let effective_scoring = config.scoring.clone().unwrap_or_default();
-    if let Err(errors) = pr_bro::scoring::validate_scoring(&effective_scoring) {
+    // Validate global scoring config
+    let global_scoring = config.scoring.clone().unwrap_or_default();
+    if let Err(errors) = pr_bro::scoring::validate_scoring(&global_scoring) {
         eprintln!("Scoring config errors:");
         for error in errors {
             eprintln!("  - {}", error);
         }
         std::process::exit(EXIT_CONFIG);
+    }
+    // Validate per-query scoring configs
+    for (i, query) in config.queries.iter().enumerate() {
+        if let Some(ref scoring) = query.scoring {
+            if let Err(errors) = pr_bro::scoring::validate_scoring(scoring) {
+                eprintln!("Scoring config errors in query '{}' (index {}):",
+                    query.name.as_deref().unwrap_or("unnamed"), i);
+                for error in errors {
+                    eprintln!("  - {}", error);
+                }
+                std::process::exit(EXIT_CONFIG);
+            }
+        }
     }
 
     // Load snooze state (before credential setup - no network required)
@@ -209,7 +222,7 @@ async fn main() {
         );
 
         // Launch TUI immediately - it will trigger initial fetch in background
-        if let Err(e) = pr_bro::tui::run_tui(app, client, effective_scoring).await {
+        if let Err(e) = pr_bro::tui::run_tui(app, client).await {
             eprintln!("TUI error: {}", e);
             std::process::exit(EXIT_NETWORK);
         }
@@ -223,7 +236,6 @@ async fn main() {
         match pr_bro::fetch::fetch_and_score_prs(
             &current_client,
             &config,
-            &effective_scoring,
             &snooze_state,
             &cache_config,
             cli.verbose,

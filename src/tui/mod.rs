@@ -5,14 +5,12 @@ pub mod ui;
 
 pub use app::App;
 
-use crate::scoring::ScoringConfig;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use event::{Event, EventHandler};
 
 pub async fn run_tui(
     mut app: App,
     mut client: octocrab::Octocrab,
-    scoring_config: ScoringConfig,
 ) -> anyhow::Result<()> {
     // Init terminal (sets up panic hooks automatically)
     let mut terminal = ratatui::init();
@@ -24,14 +22,13 @@ pub async fn run_tui(
     // Spawn initial fetch as background task
     let client_clone = client.clone();
     let config_clone = app.config.clone();
-    let scoring_clone = scoring_config.clone();
     let snooze_clone = app.snooze_state.clone();
     let cache_config_clone = app.cache_config.clone();
     let verbose = app.verbose;
 
     let mut pending_fetch: Option<tokio::task::JoinHandle<_>> = Some(tokio::spawn(async move {
         crate::fetch::fetch_and_score_prs(
-            &client_clone, &config_clone, &scoring_clone, &snooze_clone, &cache_config_clone, verbose
+            &client_clone, &config_clone, &snooze_clone, &cache_config_clone, verbose
         ).await
     }));
     app.is_loading = true;
@@ -129,14 +126,13 @@ pub async fn run_tui(
             // Spawn background fetch
             let client_clone = client.clone();
             let config_clone = app.config.clone();
-            let scoring_clone = scoring_config.clone();
             let snooze_clone = app.snooze_state.clone();
             let cache_config_clone = app.cache_config.clone();
             let verbose = app.verbose;
 
             pending_fetch = Some(tokio::spawn(async move {
                 crate::fetch::fetch_and_score_prs(
-                    &client_clone, &config_clone, &scoring_clone, &snooze_clone, &cache_config_clone, verbose
+                    &client_clone, &config_clone, &snooze_clone, &cache_config_clone, verbose
                 ).await
             }));
             app.is_loading = true;
