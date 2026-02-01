@@ -37,6 +37,7 @@ pub fn clear_cache() -> Result<()> {
 ///
 /// Uses cacache for disk persistence and in-memory HashMap for fast access.
 /// Responses are cached by URI with ETag/Last-Modified headers for conditional requests.
+#[derive(Clone)]
 pub struct DiskCache {
     inner: Arc<Mutex<CacheData>>,
     cache_path: PathBuf,
@@ -115,6 +116,13 @@ impl DiskCache {
             })),
             cache_path,
         }
+    }
+
+    /// Clear the in-memory cache to force fresh requests on next fetch
+    pub fn clear_memory(&self) {
+        let mut data = self.inner.lock().unwrap();
+        data.keys.clear();
+        data.responses.clear();
     }
 
     /// Try to load a cache entry from disk

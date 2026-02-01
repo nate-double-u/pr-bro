@@ -135,8 +135,8 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
 
         // Context-aware hints based on current view
         let hints = match app.current_view {
-            View::Active => "j/k:nav Enter:open s:snooze Tab:snoozed ?:help q:quit",
-            View::Snoozed => "j/k:nav Enter:open u:unsnooze Tab:active ?:help q:quit",
+            View::Active => "j/k:nav Enter:open s:snooze r:refresh Tab:snoozed ?:help q:quit",
+            View::Snoozed => "j/k:nav Enter:open u:unsnooze r:refresh Tab:active ?:help q:quit",
         };
 
         Line::from(vec![
@@ -292,7 +292,7 @@ fn render_help_popup(frame: &mut Frame) {
         ]),
         Line::from(vec![
             Span::styled("r             ", Style::default().fg(Color::Cyan).bold()),
-            Span::raw("Refresh PRs"),
+            Span::raw("Refresh PRs (bypasses cache)"),
         ]),
         Line::from(vec![
             Span::styled("?             ", Style::default().fg(Color::Cyan).bold()),

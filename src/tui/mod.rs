@@ -37,11 +37,21 @@ pub async fn run_tui(
         // Handle async refresh outside the event match
         if app.needs_refresh {
             app.needs_refresh = false;
+
+            // If force_refresh is true, clear in-memory cache before fetching
+            if app.force_refresh {
+                if let Some(cache) = &app.cache_handle {
+                    cache.clear_memory();
+                }
+                app.force_refresh = false;
+            }
+
             match crate::fetch::fetch_and_score_prs(
                 &client,
                 &app.config,
                 &scoring_config,
                 &app.snooze_state,
+                &app.cache_config,
                 app.verbose,
             )
             .await
@@ -103,10 +113,11 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
                 // Tab switching
                 KeyCode::Tab => app.toggle_view(),
 
-                // Refresh
+                // Refresh (manual = force fresh data)
                 KeyCode::Char('r') => {
                     app.needs_refresh = true;
-                    app.show_flash("Refreshing...".to_string());
+                    app.force_refresh = true;
+                    app.show_flash("Refreshing (fresh data)...".to_string());
                 }
 
                 // Help

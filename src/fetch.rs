@@ -1,5 +1,6 @@
 use anyhow::Result;
 use crate::config::Config;
+use crate::github::cache::CacheConfig;
 use crate::github::types::PullRequest;
 use crate::scoring::{ScoringConfig, ScoreResult, calculate_score};
 use crate::snooze::{SnoozeState, filter_active_prs, filter_snoozed_prs};
@@ -16,8 +17,18 @@ pub async fn fetch_and_score_prs(
     config: &Config,
     scoring: &ScoringConfig,
     snooze_state: &SnoozeState,
+    cache_config: &CacheConfig,
     verbose: bool,
 ) -> Result<(Vec<(PullRequest, ScoreResult)>, Vec<(PullRequest, ScoreResult)>)> {
+    if verbose {
+        let cache_status = if cache_config.enabled {
+            "enabled"
+        } else {
+            "disabled (--no-cache)"
+        };
+        eprintln!("Cache: {}", cache_status);
+    }
+
     // Search PRs for each query in parallel
     let mut all_prs = Vec::new();
     let mut any_succeeded = false;

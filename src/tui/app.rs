@@ -1,10 +1,12 @@
 use crate::config::Config;
+use crate::github::cache::{CacheConfig, DiskCache};
 use crate::github::types::PullRequest;
 use crate::scoring::ScoreResult;
 use crate::snooze::SnoozeState;
 use chrono::{DateTime, Utc};
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Instant;
 
 const MAX_UNDO: usize = 50;
@@ -48,8 +50,11 @@ pub struct App {
     pub undo_stack: VecDeque<UndoAction>,
     pub last_refresh: Instant,
     pub needs_refresh: bool,
+    pub force_refresh: bool,
     pub should_quit: bool,
     pub config: Config,
+    pub cache_config: CacheConfig,
+    pub cache_handle: Option<Arc<DiskCache>>,
     pub verbose: bool,
 }
 
@@ -60,6 +65,8 @@ impl App {
         snooze_state: SnoozeState,
         snooze_path: PathBuf,
         config: Config,
+        cache_config: CacheConfig,
+        cache_handle: Option<Arc<DiskCache>>,
         verbose: bool,
     ) -> Self {
         let mut table_state = ratatui::widgets::TableState::default();
@@ -80,8 +87,11 @@ impl App {
             undo_stack: VecDeque::new(),
             last_refresh: Instant::now(),
             needs_refresh: false,
+            force_refresh: false,
             should_quit: false,
             config,
+            cache_config,
+            cache_handle,
             verbose,
         }
     }

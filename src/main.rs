@@ -180,9 +180,9 @@ async fn main() {
         eprintln!("Cache: {} ({})", status, pr_bro::github::get_cache_path().display());
     }
 
-    // Create GitHub client
-    let client = match pr_bro::github::create_client(&token, &cache_config) {
-        Ok(c) => c,
+    // Create GitHub client and get cache handle
+    let (client, cache_handle) = match pr_bro::github::create_client(&token, &cache_config) {
+        Ok(result) => result,
         Err(e) => {
             eprintln!("Failed to create GitHub client: {}", e);
             std::process::exit(EXIT_NETWORK);
@@ -195,6 +195,7 @@ async fn main() {
         &config,
         &effective_scoring,
         &snooze_state,
+        &cache_config,
         cli.verbose,
     )
     .await
@@ -221,6 +222,8 @@ async fn main() {
             snooze_state,
             snooze_path,
             config,
+            cache_config,
+            cache_handle,
             cli.verbose,
         );
 
