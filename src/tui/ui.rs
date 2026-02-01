@@ -294,7 +294,7 @@ fn score_bar(score: f64, max_score: f64, width: usize) -> Line<'static> {
 
 /// Render the snooze duration input popup
 fn render_snooze_popup(frame: &mut Frame, app: &App) {
-    let popup_area = centered_rect_fixed(40, 5, frame.area());
+    let popup_area = centered_rect_fixed(40, 6, frame.area());
 
     // Clear the background
     frame.render_widget(Clear, popup_area);
@@ -310,10 +310,11 @@ fn render_snooze_popup(frame: &mut Frame, app: &App) {
     // Get inner area (inside the border)
     let inner = block.inner(popup_area);
 
-    // Split inner area for input and help text
+    // Split inner area for input, duration preview, and help text
     let chunks = Layout::vertical([
         Constraint::Length(1),  // Input line
-        Constraint::Length(1),  // Help text
+        Constraint::Length(1),  // Duration preview
+        Constraint::Length(1),  // Help text (Enter/Esc)
     ])
     .split(inner);
 
@@ -325,10 +326,35 @@ fn render_snooze_popup(frame: &mut Frame, app: &App) {
     let input = Paragraph::new(input_line);
     frame.render_widget(input, chunks[0]);
 
+    // Render live duration preview
+    let parse_result = if app.snooze_input.trim().is_empty() {
+        None // Not an error, just empty = indefinite
+    } else {
+        Some(humantime::parse_duration(app.snooze_input.trim()))
+    };
+
+    let preview_text = match &parse_result {
+        None => "indefinite".to_string(),
+        Some(Ok(d)) => humantime::format_duration(*d).to_string(),
+        Some(Err(_)) => "invalid duration".to_string(),
+    };
+
+    let preview_color = match &parse_result {
+        None => theme::MUTED,
+        Some(Ok(_)) => Color::Green,
+        Some(Err(_)) => Color::Red,
+    };
+
+    let preview = Paragraph::new(Line::from(vec![
+        Span::styled("Duration: ", Style::default().fg(theme::MUTED)),
+        Span::styled(preview_text, Style::default().fg(preview_color)),
+    ]));
+    frame.render_widget(preview, chunks[1]);
+
     // Render help text
-    let help = Paragraph::new("Enter: confirm | Esc: cancel | empty = indefinite")
+    let help = Paragraph::new("Enter: confirm | Esc: cancel")
         .style(Style::default().fg(theme::MUTED));
-    frame.render_widget(help, chunks[1]);
+    frame.render_widget(help, chunks[2]);
 }
 
 /// Create a centered rectangle with fixed width and height
