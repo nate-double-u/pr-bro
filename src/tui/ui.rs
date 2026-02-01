@@ -1,0 +1,176 @@
+use ratatui::prelude::*;
+use ratatui::widgets::{Block, Cell, Paragraph, Row, Table, Tabs};
+use crate::tui::app::{App, View};
+
+pub fn draw(frame: &mut Frame, app: &mut App) {
+    // Layout: Title(1) + Tabs(1) + Table(fill) + Status(1)
+    let chunks = Layout::vertical([
+        Constraint::Length(1),  // Title bar
+        Constraint::Length(1),  // Tab bar
+        Constraint::Fill(1),    // PR table
+        Constraint::Length(1),  // Status bar
+    ])
+    .split(frame.area());
+
+    render_title(frame, chunks[0]);
+    render_tabs(frame, chunks[1], app);
+    render_table(frame, chunks[2], app);
+    render_status_bar(frame, chunks[3], app);
+}
+
+fn render_title(frame: &mut Frame, area: Rect) {
+    let title = Line::from("PR Bro").bold();
+    frame.render_widget(Paragraph::new(title), area);
+}
+
+fn render_tabs(frame: &mut Frame, area: Rect, app: &App) {
+    let titles = vec!["Active", "Snoozed"];
+    let selected = match app.current_view {
+        View::Active => 0,
+        View::Snoozed => 1,
+    };
+
+    let tabs = Tabs::new(titles)
+        .select(selected)
+        .highlight_style(Style::default().reversed())
+        .divider(" | ");
+
+    frame.render_widget(tabs, area);
+}
+
+fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
+    let prs = app.current_prs();
+
+    if prs.is_empty() {
+        let empty_msg = Paragraph::new("No PRs to review")
+            .alignment(Alignment::Center)
+            .block(Block::default());
+        frame.render_widget(empty_msg, area);
+        return;
+    }
+
+    // Calculate max score for bar scaling
+    let max_score = prs.iter()
+        .map(|(_, result)| result.score)
+        .fold(0.0_f64, f64::max);
+
+    // Build rows
+    let rows: Vec<Row> = prs
+        .iter()
+        .enumerate()
+        .map(|(idx, (pr, score_result))| {
+            let index = format!("{}.", idx + 1);
+            let score_str = format_score(score_result.score, score_result.incomplete);
+            let bar = score_bar(score_result.score, max_score, 8);
+            let score_with_bar = format!("{:>5} {}", score_str, bar);
+
+            // Truncate title to fit available width
+            let title = truncate_title(&pr.title, 60);
+
+            Row::new(vec![
+                Cell::from(index).style(Style::default().fg(Color::DarkGray)),
+                Cell::from(score_with_bar),
+                Cell::from(title),
+                Cell::from(pr.url.clone()),
+            ])
+        })
+        .collect();
+
+    // Column widths
+    let widths = [
+        Constraint::Length(4),   // Index: "99."
+        Constraint::Length(16),  // Score + bar: "12.3k ████░░░░"
+        Constraint::Fill(1),     // Title
+        Constraint::Length(50),  // URL
+    ];
+
+    let table = Table::new(rows, widths)
+        .header(
+            Row::new(vec!["#", "Score", "Title", "URL"])
+                .style(Style::new().bold())
+                .bottom_margin(1),
+        )
+        .row_highlight_style(Style::new().reversed());
+
+    frame.render_stateful_widget(table, area, &mut app.table_state);
+}
+
+fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
+    let text = if let Some((ref msg, _)) = app.flash_message {
+        // Show flash message
+        Line::from(msg.clone())
+    } else {
+        // Show normal status
+        let prs = app.current_prs();
+        let count = format!("{} PRs", prs.len());
+
+        let view_mode = match app.current_view {
+            View::Active => "Active",
+            View::Snoozed => "Snoozed",
+        };
+
+        let elapsed = app.last_refresh.elapsed();
+        let refresh_time = if elapsed.as_secs() < 60 {
+            format!("refreshed {}s ago", elapsed.as_secs())
+        } else {
+            format!("refreshed {}m ago", elapsed.as_secs() / 60)
+        };
+
+        let hints = "j/k:nav Enter:open s:snooze ?:help q:quit";
+
+        Line::from(vec![
+            Span::styled(count, Style::default().fg(Color::DarkGray)),
+            Span::raw(" "),
+            Span::styled(view_mode, Style::default().fg(Color::DarkGray)),
+            Span::raw(" "),
+            Span::styled(refresh_time, Style::default().fg(Color::DarkGray)),
+            Span::raw("  "),
+            Span::raw(hints),
+        ])
+    };
+
+    frame.render_widget(Paragraph::new(text), area);
+}
+
+fn format_score(score: f64, incomplete: bool) -> String {
+    let formatted = if score >= 1_000_000.0 {
+        format!("{:.1}M", score / 1_000_000.0)
+    } else if score >= 1_000.0 {
+        format!("{:.1}k", score / 1_000.0)
+    } else {
+        format!("{:.0}", score)
+    };
+
+    // Trim trailing .0
+    let trimmed = formatted
+        .replace(".0M", "M")
+        .replace(".0k", "k");
+
+    if incomplete {
+        format!("{}*", trimmed)
+    } else {
+        trimmed
+    }
+}
+
+fn score_bar(score: f64, max_score: f64, width: usize) -> String {
+    let ratio = if max_score > 0.0 {
+        (score / max_score).min(1.0)
+    } else {
+        0.0
+    };
+    let filled = (ratio * width as f64).round() as usize;
+    let empty = width.saturating_sub(filled);
+    format!("{}{}", "█".repeat(filled), "░".repeat(empty))
+}
+
+fn truncate_title(title: &str, max_width: usize) -> String {
+    let chars: Vec<char> = title.chars().collect();
+    if chars.len() <= max_width {
+        title.to_string()
+    } else if max_width > 3 {
+        format!("{}...", chars[..max_width - 3].iter().collect::<String>())
+    } else {
+        chars[..max_width].iter().collect()
+    }
+}
