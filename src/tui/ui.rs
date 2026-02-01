@@ -33,6 +33,11 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         InputMode::Help => render_help_popup(frame),
         InputMode::Normal => {}
     }
+
+    // Render loading overlay if loading (appears on top of everything)
+    if app.is_loading {
+        render_loading_overlay(frame, app);
+    }
 }
 
 fn render_title(frame: &mut Frame, area: Rect) {
@@ -310,4 +315,36 @@ fn render_help_popup(frame: &mut Frame) {
 
     let help_text = Paragraph::new(help_lines);
     frame.render_widget(help_text, inner);
+}
+
+/// Render the loading spinner overlay
+fn render_loading_overlay(frame: &mut Frame, app: &App) {
+    let popup_area = centered_rect_fixed(30, 3, frame.area());
+
+    // Clear the background
+    frame.render_widget(Clear, popup_area);
+
+    // Render the popup border
+    let block = Block::bordered();
+    frame.render_widget(block.clone(), popup_area);
+
+    // Get inner area (inside the border)
+    let inner = block.inner(popup_area);
+
+    // Braille spinner animation
+    let spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    let spinner = spinner_chars[app.spinner_frame % 10];
+
+    // Display different text based on whether this is initial load or refresh
+    let text = if app.active_prs.is_empty() && app.snoozed_prs.is_empty() {
+        format!("{} Loading PRs...", spinner)
+    } else {
+        format!("{} Refreshing...", spinner)
+    };
+
+    let loading_text = Paragraph::new(text)
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(Color::Cyan));
+
+    frame.render_widget(loading_text, inner);
 }

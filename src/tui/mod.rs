@@ -20,6 +20,21 @@ pub async fn run_tui(
     let refresh_secs = app.config.auto_refresh_interval;
     let mut events = EventHandler::new(250, refresh_secs); // 250ms tick, N-second refresh
 
+    // Spawn initial fetch as background task
+    let client_clone = client.clone();
+    let config_clone = app.config.clone();
+    let scoring_clone = scoring_config.clone();
+    let snooze_clone = app.snooze_state.clone();
+    let cache_config_clone = app.cache_config.clone();
+    let verbose = app.verbose;
+
+    let mut pending_fetch: Option<tokio::task::JoinHandle<_>> = Some(tokio::spawn(async move {
+        crate::fetch::fetch_and_score_prs(
+            &client_clone, &config_clone, &scoring_clone, &snooze_clone, &cache_config_clone, verbose
+        ).await
+    }));
+    app.is_loading = true;
+
     // Main loop
     loop {
         // Draw UI
@@ -28,14 +43,36 @@ pub async fn run_tui(
         // Handle events
         match events.next().await {
             Event::Key(key) => handle_key_event(&mut app, key),
-            Event::Tick => app.update_flash(),
+            Event::Tick => {
+                app.update_flash();
+                app.advance_spinner();
+            }
             Event::Refresh => {
                 app.needs_refresh = true;
             }
         }
 
-        // Handle async refresh outside the event match
-        if app.needs_refresh {
+        // Check if background fetch has completed
+        if let Some(handle) = &mut pending_fetch {
+            if handle.is_finished() {
+                let handle = pending_fetch.take().unwrap();
+                match handle.await {
+                    Ok(Ok((active, snoozed))) => {
+                        app.update_prs(active, snoozed);
+                    }
+                    Ok(Err(e)) => {
+                        app.show_flash(format!("Refresh failed: {}", e));
+                    }
+                    Err(e) => {
+                        app.show_flash(format!("Refresh task panicked: {}", e));
+                    }
+                }
+                app.is_loading = false;
+            }
+        }
+
+        // Spawn new refresh if needed and no fetch is pending
+        if app.needs_refresh && pending_fetch.is_none() {
             app.needs_refresh = false;
 
             // If force_refresh is true, clear in-memory cache before fetching
@@ -46,23 +83,20 @@ pub async fn run_tui(
                 app.force_refresh = false;
             }
 
-            match crate::fetch::fetch_and_score_prs(
-                &client,
-                &app.config,
-                &scoring_config,
-                &app.snooze_state,
-                &app.cache_config,
-                app.verbose,
-            )
-            .await
-            {
-                Ok((active, snoozed)) => {
-                    app.update_prs(active, snoozed);
-                }
-                Err(e) => {
-                    app.show_flash(format!("Refresh failed: {}", e));
-                }
-            }
+            // Spawn background fetch
+            let client_clone = client.clone();
+            let config_clone = app.config.clone();
+            let scoring_clone = scoring_config.clone();
+            let snooze_clone = app.snooze_state.clone();
+            let cache_config_clone = app.cache_config.clone();
+            let verbose = app.verbose;
+
+            pending_fetch = Some(tokio::spawn(async move {
+                crate::fetch::fetch_and_score_prs(
+                    &client_clone, &config_clone, &scoring_clone, &snooze_clone, &cache_config_clone, verbose
+                ).await
+            }));
+            app.is_loading = true;
         }
 
         if app.should_quit {
