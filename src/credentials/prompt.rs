@@ -41,7 +41,14 @@ pub async fn reprompt_for_token() -> Result<String> {
 
 /// Setup token if missing - prompts for token on first run
 /// Returns the token (either existing or newly stored)
+///
+/// Check order: env var (PR_BRO_GH_TOKEN) -> keyring -> user prompt
 pub async fn setup_token_if_missing() -> Result<String> {
+    // Check env var first (supports CI/scripting, no keyring needed)
+    if let Some(token) = super::get_token_from_env() {
+        return Ok(token);
+    }
+
     match get_token().await {
         Ok(token) => {
             // Token exists, return it
