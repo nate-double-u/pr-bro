@@ -55,14 +55,27 @@ pub fn calculate_score(pr: &PullRequest, config: &ScoringConfig) -> ScoreResult 
     }
 
     // Apply approvals factor
-    if let Some(ref buckets) = config.approvals {
-        let before = score;
-        let result = apply_bucket_effect(score, pr.approvals as u64, buckets, |b| &b.range, |b| &b.effect);
-        score = result.score;
+    if let Some(ref approvals_str) = config.approvals {
+        // For approvals, "per N" means "per N approvals", not per time unit
+        // Convert formats like "+10 per 1" or "x2 per 1" to use a dummy time unit for parsing
+        // The time unit is ignored; we use approval count as units instead
+        let parseable_str = if let Some((effect_part, per_part)) = approvals_str.split_once(" per ") {
+            // Check if per_part is just a number (no time unit)
+            if per_part.trim().chars().all(|c| c.is_numeric() || c == '.') {
+                format!("{} per 1sec", effect_part)
+            } else {
+                approvals_str.clone()
+            }
+        } else {
+            approvals_str.clone()
+        };
 
-        // Only add contribution if a bucket matched
-        if let (Some(range), Some(effect)) = (result.matched_range, result.matched_effect) {
-            let description = format!("{} approvals, matched '{}' -> {}", pr.approvals, range, effect);
+        if let Ok(effect) = Effect::parse(&parseable_str) {
+            let before = score;
+            let units = pr.approvals as u64;
+            score = effect.apply(score, units);
+
+            let description = format!("{} approvals, effect: {}", pr.approvals, approvals_str);
             factors.push(FactorContribution {
                 label: "Approvals".to_string(),
                 description,
@@ -155,7 +168,7 @@ where
 mod tests {
     use super::*;
     use chrono::{Utc, Duration as ChronoDuration};
-    use crate::scoring::{ApprovalBucket, SizeBucket, SizeConfig};
+    use crate::scoring::{SizeBucket, SizeConfig};
 
     fn sample_pr(age_hours: i64, approvals: u32, size: u64) -> PullRequest {
         PullRequest {
@@ -211,14 +224,12 @@ mod tests {
     }
 
     #[test]
-    fn test_approvals_bucket_zero() {
+    fn test_approvals_flat_effect() {
         let pr = sample_pr(1, 0, 100);
         let result = calculate_score(&pr, &ScoringConfig {
             base_score: Some(100.0),
             age: None,
-            approvals: Some(vec![
-                ApprovalBucket { range: "0".to_string(), effect: "x0.5".to_string() },
-            ]),
+            approvals: Some("x0.5".to_string()),
             size: None,
         });
         assert_eq!(result.score, 50.0);
@@ -249,10 +260,7 @@ mod tests {
         let config = ScoringConfig {
             base_score: Some(100.0),
             age: Some("+1 per 1h".to_string()),  // +24 for age
-            approvals: Some(vec![
-                ApprovalBucket { range: "0".to_string(), effect: "x0.5".to_string() },
-                ApprovalBucket { range: ">0".to_string(), effect: "x1.5".to_string() },
-            ]),
+            approvals: Some("x1.5 per 1".to_string()),  // x1.5 for 1 approval
             size: Some(SizeConfig {
                 exclude: None,
                 buckets: vec![
@@ -264,7 +272,7 @@ mod tests {
 
         let result = calculate_score(&pr, &config);
 
-        // Expected: (100 + 24) * 1.5 * 1 = 186
+        // Expected: (100 + 24) * 1.5^1 * 1 = 186
         assert!((result.score - 186.0).abs() < 0.1);
         assert!(!result.incomplete);
     }
@@ -275,9 +283,9 @@ mod tests {
         let config = ScoringConfig::default();
         let result = calculate_score(&pr, &config);
 
-        // Default config has factors: base=100, +1/h age, 0 approvals=x0.5, <100 size=x5
-        // Expected: (100 + 5) * 0.5 * 5 = 262.5
-        assert!((result.score - 262.5).abs() < 0.1);
+        // Default config has factors: base=100, +1/h age, +10 per 1 approval (0 approvals = +0), <100 size=x5
+        // Expected: (100 + 5 + 0) * 5 = 525
+        assert!((result.score - 525.0).abs() < 0.1);
     }
 
     #[test]

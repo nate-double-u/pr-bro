@@ -7,6 +7,7 @@ fn default_refresh_interval() -> u64 {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     /// Global scoring configuration (applies to all queries unless overridden)
     #[serde(default)]
@@ -20,6 +21,7 @@ pub struct Config {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct QueryConfig {
     pub name: Option<String>,
     pub query: String,

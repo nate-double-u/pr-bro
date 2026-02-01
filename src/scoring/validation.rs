@@ -21,21 +21,10 @@ pub fn validate_scoring(config: &ScoringConfig) -> Result<(), Vec<String>> {
         }
     }
 
-    // Validate approvals buckets
-    if let Some(ref buckets) = config.approvals {
-        for (i, bucket) in buckets.iter().enumerate() {
-            if let Err(e) = RangeOp::parse(&bucket.range) {
-                errors.push(format!(
-                    "scoring.approvals[{}].range: invalid '{}' - {}",
-                    i, bucket.range, e
-                ));
-            }
-            if let Err(e) = Effect::parse(&bucket.effect) {
-                errors.push(format!(
-                    "scoring.approvals[{}].effect: invalid '{}' - {}",
-                    i, bucket.effect, e
-                ));
-            }
+    // Validate approvals effect string
+    if let Some(ref approvals) = config.approvals {
+        if let Err(e) = Effect::parse(approvals) {
+            errors.push(format!("scoring.approvals: invalid format '{}' - {}", approvals, e));
         }
     }
 
@@ -67,16 +56,14 @@ pub fn validate_scoring(config: &ScoringConfig) -> Result<(), Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scoring::{ApprovalBucket, SizeBucket, SizeConfig};
+    use crate::scoring::{SizeBucket, SizeConfig};
 
     #[test]
     fn test_valid_config() {
         let config = ScoringConfig {
             base_score: Some(100.0),
             age: Some("+1 per 1h".to_string()),
-            approvals: Some(vec![
-                ApprovalBucket { range: "0".to_string(), effect: "x0.5".to_string() },
-            ]),
+            approvals: Some("x0.5".to_string()),
             size: None,
         };
         assert!(validate_scoring(&config).is_ok());
@@ -122,19 +109,17 @@ mod tests {
     }
 
     #[test]
-    fn test_invalid_approval_bucket() {
+    fn test_invalid_approval_effect() {
         let config = ScoringConfig {
             base_score: None,
             age: None,
-            approvals: Some(vec![
-                ApprovalBucket { range: "invalid".to_string(), effect: "x2".to_string() },
-            ]),
+            approvals: Some("invalid".to_string()),
             size: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
         let errors = result.unwrap_err();
-        assert!(errors[0].contains("scoring.approvals[0].range"));
+        assert!(errors[0].contains("scoring.approvals"));
     }
 
     #[test]
