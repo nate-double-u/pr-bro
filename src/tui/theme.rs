@@ -58,3 +58,12 @@ pub const FLASH_ERROR: Color = Color::Red;              // Error flash messages
 
 // Divider and separator colors
 pub const DIVIDER_COLOR: Color = Color::Indexed(238);  // Subtle line color
+
+// Popup overlay colors
+pub const POPUP_BORDER: Color = Color::Cyan;          // Accent color for popup borders
+pub const POPUP_TITLE: Style = Style::new().fg(Color::Cyan).bold();
+pub const POPUP_BG: Color = Color::Indexed(234);      // Dark background for popup content
+
+// Scrollbar colors
+pub const SCROLLBAR_THUMB: Color = Color::Indexed(244);  // Medium gray for scrollbar thumb
+pub const SCROLLBAR_TRACK: Color = Color::Indexed(236);  // Dark gray for scrollbar track

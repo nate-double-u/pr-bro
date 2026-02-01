@@ -1,5 +1,5 @@
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Cell, Clear, Paragraph, Row, Table, Tabs};
+use ratatui::widgets::{Block, Cell, Clear, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, Tabs};
 use crate::tui::app::{App, InputMode, View};
 use crate::tui::theme;
 
@@ -93,6 +93,10 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
         .map(|(_, result)| result.score)
         .fold(0.0_f64, f64::max);
 
+    // Store PR count and selected position for scrollbar (before borrowing table_state)
+    let pr_count = prs.len();
+    let selected_pos = app.table_state.selected().unwrap_or(0);
+
     // Build rows
     let rows: Vec<Row> = prs
         .iter()
@@ -147,6 +151,19 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
         .row_highlight_style(theme::ROW_SELECTED);
 
     frame.render_stateful_widget(table, area, &mut app.table_state);
+
+    // Render scrollbar if PR list exceeds visible area
+    let visible_rows = area.height.saturating_sub(2) as usize;  // Subtract header and margin
+    if pr_count > visible_rows {
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .thumb_style(Style::default().fg(theme::SCROLLBAR_THUMB))
+            .track_style(Style::default().fg(theme::SCROLLBAR_TRACK));
+
+        let mut scrollbar_state = ScrollbarState::new(pr_count)
+            .position(selected_pos);
+
+        frame.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
+    }
 }
 
 fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
@@ -293,8 +310,12 @@ fn render_snooze_popup(frame: &mut Frame, app: &App) {
     // Clear the background
     frame.render_widget(Clear, popup_area);
 
-    // Render the popup border
-    let block = Block::bordered().title("Snooze Duration");
+    // Render the popup border with accent color
+    let block = Block::bordered()
+        .title("Snooze Duration")
+        .border_style(Style::default().fg(theme::POPUP_BORDER))
+        .title_style(theme::POPUP_TITLE)
+        .style(Style::default().bg(theme::POPUP_BG));
     frame.render_widget(block.clone(), popup_area);
 
     // Get inner area (inside the border)
@@ -307,9 +328,12 @@ fn render_snooze_popup(frame: &mut Frame, app: &App) {
     ])
     .split(inner);
 
-    // Render input with cursor
-    let input_text = format!("{}|", app.snooze_input);
-    let input = Paragraph::new(input_text);
+    // Render input with cursor (cursor in cyan for visibility)
+    let input_line = Line::from(vec![
+        Span::raw(&app.snooze_input),
+        Span::styled("|", Style::default().fg(Color::Cyan)),
+    ]);
+    let input = Paragraph::new(input_line);
     frame.render_widget(input, chunks[0]);
 
     // Render help text
@@ -343,8 +367,12 @@ fn render_help_popup(frame: &mut Frame) {
     // Clear the background
     frame.render_widget(Clear, popup_area);
 
-    // Render the popup border
-    let block = Block::bordered().title(" Keyboard Shortcuts ");
+    // Render the popup border with accent color
+    let block = Block::bordered()
+        .title(" Keyboard Shortcuts ")
+        .border_style(Style::default().fg(theme::POPUP_BORDER))
+        .title_style(theme::POPUP_TITLE)
+        .style(Style::default().bg(theme::POPUP_BG));
     frame.render_widget(block.clone(), popup_area);
 
     // Get inner area (inside the border)
@@ -409,8 +437,10 @@ fn render_loading_overlay(frame: &mut Frame, app: &App) {
     // Clear the background
     frame.render_widget(Clear, popup_area);
 
-    // Render the popup border
-    let block = Block::bordered();
+    // Render the popup border with accent color
+    let block = Block::bordered()
+        .border_style(Style::default().fg(theme::POPUP_BORDER))
+        .style(Style::default().bg(theme::POPUP_BG));
     frame.render_widget(block.clone(), popup_area);
 
     // Get inner area (inside the border)
