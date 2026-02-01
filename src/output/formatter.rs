@@ -194,6 +194,28 @@ pub fn format_scored_table(prs: &[ScoredPr], use_colors: bool) -> String {
         .join("\n")
 }
 
+/// Format PRs as tab-separated values for scripting
+/// Columns: score, title, repo, url (no headers, no colors)
+pub fn format_tsv(prs: &[ScoredPr]) -> String {
+    if prs.is_empty() {
+        return String::new();
+    }
+
+    prs.iter()
+        .map(|scored| {
+            let score = scored.score.round() as i64;
+            format!(
+                "{}\t{}\t{}\t{}",
+                score,
+                scored.pr.title,
+                scored.pr.repo,
+                scored.pr.url
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Format a duration into a human-readable age string
 /// "2h" for hours, "3d" for days, "1w" for weeks
 pub fn format_age(duration: Duration) -> String {
@@ -435,6 +457,50 @@ mod tests {
         assert!(lines[0].contains("Fix login bug"));
         assert!(lines[1].contains("500"));
         assert!(lines[1].contains("Add new feature"));
+    }
+
+    // format_tsv tests
+    #[test]
+    fn test_format_tsv_empty() {
+        let prs: Vec<ScoredPr> = vec![];
+        let result = format_tsv(&prs);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_format_tsv_single() {
+        let pr = sample_pr();
+        let scored_prs = vec![ScoredPr {
+            pr: &pr,
+            score: 1500.7,
+            incomplete: false,
+        }];
+        let result = format_tsv(&scored_prs);
+        assert_eq!(
+            result,
+            "1501\tFix login bug\towner/repo\thttps://github.com/owner/repo/pull/123"
+        );
+    }
+
+    #[test]
+    fn test_format_tsv_multiple() {
+        let pr1 = sample_pr();
+        let mut pr2 = sample_pr();
+        pr2.title = "Add feature".to_string();
+        pr2.url = "https://github.com/owner/repo/pull/456".to_string();
+
+        let scored_prs = vec![
+            ScoredPr { pr: &pr1, score: 2000.0, incomplete: false },
+            ScoredPr { pr: &pr2, score: 500.0, incomplete: true },
+        ];
+        let result = format_tsv(&scored_prs);
+        let lines: Vec<&str> = result.lines().collect();
+        assert_eq!(lines.len(), 2);
+        // Verify tab-separated format
+        assert!(lines[0].contains('\t'));
+        assert_eq!(lines[0].split('\t').count(), 4);
+        assert!(lines[0].starts_with("2000\t"));
+        assert!(lines[1].starts_with("500\t"));
     }
 
     #[test]

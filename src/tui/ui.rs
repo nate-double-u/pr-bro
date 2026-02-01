@@ -3,6 +3,16 @@ use ratatui::widgets::{Block, Cell, Clear, Paragraph, Row, Table, Tabs};
 use crate::tui::app::{App, InputMode, View};
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
+    let area = frame.area();
+
+    // Handle very small terminal sizes gracefully
+    if area.height < 6 || area.width < 30 {
+        let msg = Paragraph::new("Terminal too small")
+            .alignment(Alignment::Center);
+        frame.render_widget(msg, area);
+        return;
+    }
+
     // Layout: Title(1) + Tabs(1) + Table(fill) + Status(1)
     let chunks = Layout::vertical([
         Constraint::Length(1),  // Title bar
@@ -10,7 +20,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         Constraint::Fill(1),    // PR table
         Constraint::Length(1),  // Status bar
     ])
-    .split(frame.area());
+    .split(area);
 
     render_title(frame, chunks[0]);
     render_tabs(frame, chunks[1], app);

@@ -217,7 +217,13 @@ async fn main() {
             // Output results
             let use_colors = pr_bro::output::should_use_colors();
 
-            if cli.verbose && !scored_refs.is_empty() {
+            if cli.format == "tsv" {
+                // TSV mode: machine-readable tab-separated output
+                let output = pr_bro::output::format_tsv(&scored_refs);
+                if !output.is_empty() {
+                    println!("{}", output);
+                }
+            } else if cli.verbose && !scored_refs.is_empty() {
                 // Verbose mode: detailed output with scores
                 for scored in &scored_refs {
                     println!(
