@@ -53,7 +53,11 @@ pub fn load_config(path: Option<PathBuf>) -> Result<Config> {
         .with_context(|| format!("Failed to read config file at {}", config_path.display()))?;
 
     let config: Config = serde_saphyr::from_str(&config_content)
-        .with_context(|| format!("Failed to parse config: invalid YAML in {}", config_path.display()))?;
+        .map_err(|e| anyhow::anyhow!(
+            "Failed to parse config {}: {}",
+            config_path.display(),
+            e
+        ))?;
 
     Ok(config)
 }

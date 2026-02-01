@@ -104,7 +104,7 @@ async fn main() {
     let config = match pr_bro::config::load_config(config_path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("Config error: {}", e);
+            eprintln!("Config error: {:#}", e);
             std::process::exit(EXIT_CONFIG);
         }
     };
