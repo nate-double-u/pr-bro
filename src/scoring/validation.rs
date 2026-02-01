@@ -1,5 +1,5 @@
 use anyhow::Result;
-use super::config::ScoringConfig;
+use super::config::{ScoringConfig, SizeBucket};
 use super::factors::{RangeOp, Effect};
 
 /// Validate scoring configuration at startup.
@@ -23,7 +23,20 @@ pub fn validate_scoring(config: &ScoringConfig) -> Result<(), Vec<String>> {
 
     // Validate approvals effect string
     if let Some(ref approvals) = config.approvals {
-        if let Err(e) = Effect::parse(approvals) {
+        // For approvals, "per N" means "per N approvals", not per time unit
+        // Convert formats like "+10 per 1" to "+10 per 1sec" for parsing validation
+        let parseable_str = if let Some((effect_part, per_part)) = approvals.split_once(" per ") {
+            // Check if per_part is just a number (no time unit)
+            if per_part.trim().chars().all(|c| c.is_numeric() || c == '.') {
+                format!("{} per 1sec", effect_part)
+            } else {
+                approvals.clone()
+            }
+        } else {
+            approvals.clone()
+        };
+
+        if let Err(e) = Effect::parse(&parseable_str) {
             errors.push(format!("scoring.approvals: invalid format '{}' - {}", approvals, e));
         }
     }
@@ -44,12 +57,72 @@ pub fn validate_scoring(config: &ScoringConfig) -> Result<(), Vec<String>> {
                 ));
             }
         }
+
+        // Check for overlapping ranges
+        if let Err(e) = check_bucket_overlaps(&size_config.buckets) {
+            errors.push(e);
+        }
     }
 
     if errors.is_empty() {
         Ok(())
     } else {
         Err(errors)
+    }
+}
+
+fn check_bucket_overlaps(buckets: &[SizeBucket]) -> Result<(), String> {
+    for i in 0..buckets.len() {
+        for j in (i + 1)..buckets.len() {
+            let r1 = RangeOp::parse(&buckets[i].range)
+                .map_err(|e| format!("bucket[{}]: {}", i, e))?;
+            let r2 = RangeOp::parse(&buckets[j].range)
+                .map_err(|e| format!("bucket[{}]: {}", j, e))?;
+
+            if do_ranges_overlap(&r1, &r2) {
+                return Err(format!(
+                    "scoring.size.buckets: overlapping ranges at buckets[{}] ('{}') and buckets[{}] ('{}')",
+                    i, buckets[i].range, j, buckets[j].range
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn do_ranges_overlap(r1: &RangeOp, r2: &RangeOp) -> bool {
+    // Check if any value could match both ranges
+    // Need exhaustive case matching for all RangeOp variants
+    use RangeOp::*;
+
+    match (r1, r2) {
+        (Equal(a), Equal(b)) => *a == *b,
+        (Equal(n), Between(low, high)) | (Between(low, high), Equal(n)) => *n >= *low && *n <= *high,
+        (Equal(n), LessThan(max)) | (LessThan(max), Equal(n)) => *n < *max,
+        (Equal(n), LessEqual(max)) | (LessEqual(max), Equal(n)) => *n <= *max,
+        (Equal(n), GreaterThan(min)) | (GreaterThan(min), Equal(n)) => *n > *min,
+        (Equal(n), GreaterEqual(min)) | (GreaterEqual(min), Equal(n)) => *n >= *min,
+
+        (Between(l1, h1), Between(l2, h2)) => {
+            // Ranges overlap if one's low is in other's range, or vice versa
+            (*l1 >= *l2 && *l1 <= *h2) || (*l2 >= *l1 && *l2 <= *h1)
+        }
+
+        (LessThan(_), LessThan(_)) | (LessEqual(_), LessEqual(_)) => true,
+        (LessThan(_), LessEqual(_)) | (LessEqual(_), LessThan(_)) => true,
+
+        (GreaterThan(_), GreaterThan(_)) | (GreaterEqual(_), GreaterEqual(_)) => true,
+        (GreaterThan(_), GreaterEqual(_)) | (GreaterEqual(_), GreaterThan(_)) => true,
+
+        (LessThan(max), Between(low, _)) | (Between(low, _), LessThan(max)) => *low < *max,
+        (LessEqual(max), Between(low, _)) | (Between(low, _), LessEqual(max)) => *low <= *max,
+        (GreaterThan(min), Between(_, high)) | (Between(_, high), GreaterThan(min)) => *high > *min,
+        (GreaterEqual(min), Between(_, high)) | (Between(_, high), GreaterEqual(min)) => *high >= *min,
+
+        (LessThan(max), GreaterThan(min)) | (GreaterThan(min), LessThan(max)) => *max > *min + 1,
+        (LessThan(max), GreaterEqual(min)) | (GreaterEqual(min), LessThan(max)) => *max > *min,
+        (LessEqual(max), GreaterThan(min)) | (GreaterThan(min), LessEqual(max)) => *max > *min,
+        (LessEqual(max), GreaterEqual(min)) | (GreaterEqual(min), LessEqual(max)) => *max >= *min,
     }
 }
 
@@ -153,5 +226,150 @@ mod tests {
         assert!(result.is_err());
         let errors = result.unwrap_err();
         assert_eq!(errors.len(), 2);
+    }
+
+    #[test]
+    fn test_default_config_passes_validation() {
+        let config = ScoringConfig::default();
+        match validate_scoring(&config) {
+            Ok(_) => {},
+            Err(errors) => {
+                eprintln!("Default config validation failed: {:?}", errors);
+                panic!("Default config should pass validation");
+            }
+        }
+    }
+
+    #[test]
+    fn test_no_overlap_exclusive_boundary() {
+        let config = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: Some(SizeConfig {
+                exclude: None,
+                buckets: vec![
+                    SizeBucket { range: "<100".to_string(), effect: "x5".to_string() },
+                    SizeBucket { range: ">=100".to_string(), effect: "x1".to_string() },
+                ],
+            }),
+        };
+        assert!(validate_scoring(&config).is_ok());
+    }
+
+    #[test]
+    fn test_overlap_at_boundary() {
+        let config = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: Some(SizeConfig {
+                exclude: None,
+                buckets: vec![
+                    SizeBucket { range: "<=100".to_string(), effect: "x5".to_string() },
+                    SizeBucket { range: ">=100".to_string(), effect: "x1".to_string() },
+                ],
+            }),
+        };
+        let result = validate_scoring(&config);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors[0].contains("overlapping ranges"));
+        assert!(errors[0].contains("<=100"));
+        assert!(errors[0].contains(">=100"));
+    }
+
+    #[test]
+    fn test_overlap_between_ranges() {
+        let config = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: Some(SizeConfig {
+                exclude: None,
+                buckets: vec![
+                    SizeBucket { range: "100-500".to_string(), effect: "x2".to_string() },
+                    SizeBucket { range: "300-700".to_string(), effect: "x1".to_string() },
+                ],
+            }),
+        };
+        let result = validate_scoring(&config);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors[0].contains("overlapping ranges"));
+    }
+
+    #[test]
+    fn test_no_overlap_between_ranges() {
+        let config = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: Some(SizeConfig {
+                exclude: None,
+                buckets: vec![
+                    SizeBucket { range: "100-200".to_string(), effect: "x2".to_string() },
+                    SizeBucket { range: "300-400".to_string(), effect: "x1".to_string() },
+                ],
+            }),
+        };
+        assert!(validate_scoring(&config).is_ok());
+    }
+
+    #[test]
+    fn test_equal_in_between_overlaps() {
+        let config = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: Some(SizeConfig {
+                exclude: None,
+                buckets: vec![
+                    SizeBucket { range: "150".to_string(), effect: "x2".to_string() },
+                    SizeBucket { range: "100-200".to_string(), effect: "x1".to_string() },
+                ],
+            }),
+        };
+        let result = validate_scoring(&config);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors[0].contains("overlapping ranges"));
+    }
+
+    #[test]
+    fn test_same_direction_always_overlaps() {
+        let config = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: Some(SizeConfig {
+                exclude: None,
+                buckets: vec![
+                    SizeBucket { range: "<100".to_string(), effect: "x2".to_string() },
+                    SizeBucket { range: "<200".to_string(), effect: "x1".to_string() },
+                ],
+            }),
+        };
+        let result = validate_scoring(&config);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors[0].contains("overlapping ranges"));
+    }
+
+    #[test]
+    fn test_greater_vs_less_no_overlap() {
+        let config = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: Some(SizeConfig {
+                exclude: None,
+                buckets: vec![
+                    SizeBucket { range: ">200".to_string(), effect: "x2".to_string() },
+                    SizeBucket { range: "<100".to_string(), effect: "x1".to_string() },
+                ],
+            }),
+        };
+        assert!(validate_scoring(&config).is_ok());
     }
 }
