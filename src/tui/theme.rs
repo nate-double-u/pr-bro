@@ -3,9 +3,9 @@
 use ratatui::prelude::*;
 
 // Score-based colors (based on relative score percentage 0-100%)
-pub const SCORE_HIGH: Color = Color::Green;    // >= 70% of max
+pub const SCORE_HIGH: Color = Color::Red;      // >= 70% of max — most urgent
 pub const SCORE_MID: Color = Color::Yellow;    // >= 40% of max
-pub const SCORE_LOW: Color = Color::Red;       // < 40% of max
+pub const SCORE_LOW: Color = Color::Green;     // < 40% of max — less urgent
 
 /// Returns the appropriate color for a score based on its percentage of max score
 pub fn score_color(score: f64, max_score: f64) -> Color {
@@ -25,9 +25,9 @@ pub fn score_color(score: f64, max_score: f64) -> Color {
 }
 
 // Score bar colors (same thresholds as score text)
-pub const BAR_FILLED_HIGH: Color = Color::Green;
+pub const BAR_FILLED_HIGH: Color = Color::Red;
 pub const BAR_FILLED_MID: Color = Color::Yellow;
-pub const BAR_FILLED_LOW: Color = Color::Red;
+pub const BAR_FILLED_LOW: Color = Color::Green;
 pub const BAR_EMPTY: Color = Color::DarkGray;
 
 // Table colors

@@ -72,7 +72,8 @@ fn render_tabs(frame: &mut Frame, area: Rect, app: &App) {
         .select(selected)
         .style(Style::default().fg(theme::MUTED))
         .highlight_style(Style::default().fg(theme::TITLE_COLOR).bold().reversed())
-        .divider(" | ");
+        .divider(" | ")
+        .padding("  ", "  ");
 
     frame.render_widget(tabs, area);
 }
@@ -114,8 +115,7 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
             score_spans.extend(bar_line.spans);
             let score_line = Line::from(score_spans);
 
-            // Truncate title to fit available width
-            let title = truncate_title(&pr.title, 60);
+            let title = pr.title.clone();
 
             // Alternating row background (odd rows get subtle background)
             let row_style = if idx % 2 == 1 {
@@ -290,17 +290,6 @@ fn score_bar(score: f64, max_score: f64, width: usize) -> Line<'static> {
     }
 
     Line::from(spans)
-}
-
-fn truncate_title(title: &str, max_width: usize) -> String {
-    let chars: Vec<char> = title.chars().collect();
-    if chars.len() <= max_width {
-        title.to_string()
-    } else if max_width > 3 {
-        format!("{}...", chars[..max_width - 3].iter().collect::<String>())
-    } else {
-        chars[..max_width].iter().collect()
-    }
 }
 
 /// Render the snooze duration input popup
