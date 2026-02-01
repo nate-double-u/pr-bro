@@ -200,6 +200,9 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
                 // Help
                 KeyCode::Char('?') => app.show_help(),
 
+                // Score breakdown
+                KeyCode::Char('d') => app.show_score_breakdown(),
+
                 _ => {}
             }
         }
@@ -223,6 +226,12 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
 
                 // Ignore all other keys (don't propagate to Normal mode)
                 _ => {}
+            }
+        }
+        app::InputMode::ScoreBreakdown => {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('d') => app.dismiss_score_breakdown(),
+                _ => {} // Ignore other keys
             }
         }
         app::InputMode::Help => {

@@ -32,6 +32,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     match app.input_mode {
         InputMode::SnoozeInput => render_snooze_popup(frame, app),
         InputMode::Help => render_help_popup(frame),
+        InputMode::ScoreBreakdown => render_score_breakdown_popup(frame, app),
         InputMode::Normal => {}
     }
 
@@ -201,6 +202,7 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
             View::Active => vec![
                 ("j", "/", "k", ":nav "),
                 ("Enter", "", "", ":open "),
+                ("d", "", "", ":detail "),
                 ("s", "", "", ":snooze "),
                 ("r", "", "", ":refresh "),
                 ("Tab", "", "", ":snoozed "),
@@ -210,6 +212,7 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
             View::Snoozed => vec![
                 ("j", "/", "k", ":nav "),
                 ("Enter", "", "", ":open "),
+                ("d", "", "", ":detail "),
                 ("u", "", "", ":unsnooze "),
                 ("r", "", "", ":refresh "),
                 ("Tab", "", "", ":active "),
@@ -377,7 +380,7 @@ fn centered_rect_fixed(width: u16, height: u16, area: Rect) -> Rect {
 
 /// Render the help overlay popup
 fn render_help_popup(frame: &mut Frame) {
-    let popup_area = centered_rect_fixed(50, 16, frame.area());
+    let popup_area = centered_rect_fixed(50, 17, frame.area());
 
     // Clear the background
     frame.render_widget(Clear, popup_area);
@@ -406,6 +409,10 @@ fn render_help_popup(frame: &mut Frame) {
         Line::from(vec![
             Span::styled("Enter / o     ", Style::default().fg(Color::Cyan).bold()),
             Span::raw("Open PR in browser"),
+        ]),
+        Line::from(vec![
+            Span::styled("d             ", Style::default().fg(Color::Cyan).bold()),
+            Span::raw("Score breakdown"),
         ]),
         Line::from(vec![
             Span::styled("s             ", Style::default().fg(Color::Cyan).bold()),
@@ -477,4 +484,134 @@ fn render_loading_overlay(frame: &mut Frame, app: &App) {
         .style(Style::default().fg(Color::Cyan));
 
     frame.render_widget(loading_text, inner);
+}
+
+/// Render the score breakdown detail popup
+fn render_score_breakdown_popup(frame: &mut Frame, app: &App) {
+    // Get selected PR and score result
+    let (pr, score_result) = match app.selected_pr().zip(app.selected_score_result()) {
+        Some(pair) => pair,
+        None => return, // Defensive: shouldn't happen but exit gracefully
+    };
+
+    let breakdown = &score_result.breakdown;
+
+    // Calculate dynamic height: 4 header lines + factors + 3 footer lines
+    // Minimum 10, max ~18 to avoid overflow
+    let num_factors = breakdown.factors.len();
+    let content_height = 4 + num_factors + 3;
+    let popup_height = content_height.clamp(10, 18) as u16;
+
+    let popup_area = centered_rect_fixed(55, popup_height, frame.area());
+
+    // Clear the background
+    frame.render_widget(Clear, popup_area);
+
+    // Render the popup border with accent color
+    let block = Block::bordered()
+        .title(" Score Breakdown ")
+        .border_style(Style::default().fg(theme::POPUP_BORDER))
+        .title_style(theme::POPUP_TITLE)
+        .style(Style::default().bg(theme::POPUP_BG));
+    frame.render_widget(block.clone(), popup_area);
+
+    // Get inner area (inside the border)
+    let inner = block.inner(popup_area);
+
+    // Build content lines
+    let mut lines = Vec::new();
+
+    // Line 1: PR reference in muted text
+    lines.push(Line::from(Span::styled(
+        pr.short_ref(),
+        Style::default().fg(theme::MUTED),
+    )));
+
+    // Line 2: PR title (truncate if needed)
+    let max_title_width = (inner.width as usize).saturating_sub(2);
+    let title = if pr.title.len() > max_title_width {
+        format!("{}...", &pr.title[..max_title_width.saturating_sub(3)])
+    } else {
+        pr.title.clone()
+    };
+    lines.push(Line::from(title));
+
+    // Line 3: Empty separator
+    lines.push(Line::from(""));
+
+    // Line 4: Base score
+    lines.push(Line::from(vec![
+        Span::raw("Base score:  "),
+        Span::styled(
+            format!("{:.1}", breakdown.base_score),
+            Style::default().bold(),
+        ),
+    ]));
+
+    // Lines 5+: Factor contributions
+    if breakdown.factors.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "No scoring factors configured",
+            Style::default().fg(theme::MUTED),
+        )));
+    } else {
+        for factor in &breakdown.factors {
+            // Determine color for after value based on change
+            let after_color = if factor.after > factor.before {
+                Color::Green
+            } else if factor.after < factor.before {
+                Color::Red
+            } else {
+                Color::White
+            };
+
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("{}: ", factor.label),
+                    Style::default().fg(Color::Cyan).bold(),
+                ),
+                Span::styled(
+                    format!("{:.1}", factor.before),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::raw(" -> "),
+                Span::styled(
+                    format!("{:.1}", factor.after),
+                    Style::default().fg(after_color).bold(),
+                ),
+                Span::styled(
+                    format!(" ({})", factor.description),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]));
+        }
+    }
+
+    // Line N-2: Empty separator
+    lines.push(Line::from(""));
+
+    // Line N-1: Final score with color
+    let max_score = app.current_prs()
+        .iter()
+        .map(|(_, sr)| sr.score)
+        .fold(0.0_f64, f64::max);
+    let score_color = theme::score_color(score_result.score, max_score);
+
+    lines.push(Line::from(vec![
+        Span::raw("Final score: "),
+        Span::styled(
+            format!("{:.1}", score_result.score),
+            Style::default().fg(score_color).bold(),
+        ),
+    ]));
+
+    // Line N: Help text
+    lines.push(Line::from(Span::styled(
+        "Esc or d to close",
+        Style::default().fg(theme::MUTED),
+    )));
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, inner);
 }

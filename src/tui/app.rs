@@ -22,6 +22,7 @@ pub enum InputMode {
     Normal,
     SnoozeInput,
     Help,
+    ScoreBreakdown,
 }
 
 #[derive(Debug, Clone)]
@@ -435,6 +436,24 @@ impl App {
     /// Dismiss help overlay
     pub fn dismiss_help(&mut self) {
         self.input_mode = InputMode::Normal;
+    }
+
+    /// Show score breakdown overlay
+    pub fn show_score_breakdown(&mut self) {
+        if self.selected_pr().is_some() {
+            self.input_mode = InputMode::ScoreBreakdown;
+        }
+    }
+
+    /// Dismiss score breakdown overlay
+    pub fn dismiss_score_breakdown(&mut self) {
+        self.input_mode = InputMode::Normal;
+    }
+
+    /// Get the selected PR's ScoreResult
+    pub fn selected_score_result(&self) -> Option<&crate::scoring::ScoreResult> {
+        let prs = self.current_prs();
+        self.table_state.selected().and_then(|i| prs.get(i).map(|(_, sr)| sr))
     }
 
     /// Update PRs with fresh data from fetch
