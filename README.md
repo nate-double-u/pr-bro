@@ -1,0 +1,361 @@
+# pr-bro
+
+GitHub PR review prioritization CLI/TUI
+
+**Know which PR to review next.** pr-bro helps developers prioritize pull request reviews based on weighted scoring (age, approvals, size) across multiple GitHub queries. Features an interactive TUI with keyboard navigation, smart caching, and flexible per-query configuration.
+
+## Features
+
+- Weighted scoring based on age, approvals, and PR size
+- Interactive TUI with keyboard navigation and real-time updates
+- Multiple query support with per-query scoring overrides
+- Snooze PRs (timed or indefinite) to hide them temporarily
+- Score breakdown detail view (press `d` to see how a PR's score was calculated)
+- ETag-based HTTP caching for rate limit conservation
+- Parallel API fetching for faster startup
+- Secure keyring credential storage (macOS Keychain, Windows Credential Manager, Linux Secret Service)
+- Config validation with clear error messages (catches typos and overlapping size ranges)
+
+## Installation
+
+### From Source
+
+Requires Rust toolchain (1.70+) and system keyring support.
+
+```bash
+cargo install --path .
+```
+
+### Prerequisites
+
+- **Rust**: Install from [rustup.rs](https://rustup.rs)
+- **System Keyring**: macOS Keychain (built-in), Windows Credential Manager (built-in), or Linux Secret Service (GNOME Keyring, KWallet)
+
+## Quick Start
+
+On first run, pr-bro will prompt for your GitHub Personal Access Token and store it securely in your system keyring.
+
+### Minimal Configuration
+
+Create `~/.config/pr-bro/config.yaml`:
+
+```yaml
+queries:
+  - name: my-reviews
+    query: "is:pr review-requested:@me"
+```
+
+### Running
+
+```bash
+# Launch interactive TUI (default)
+pr-bro
+
+# Plain text table output (non-interactive)
+pr-bro list
+
+# Show snoozed PRs
+pr-bro list --show-snoozed
+```
+
+## Configuration
+
+Configuration file location: `~/.config/pr-bro/config.yaml`
+
+### Full Configuration Example
+
+```yaml
+# Auto-refresh interval in seconds (default: 300 = 5 minutes)
+auto_refresh_interval: 300
+
+# Global scoring configuration (applies to all queries unless overridden)
+scoring:
+  base_score: 100
+  age: "+1 per 1h"       # Adds 1 point per hour of age
+  approvals: "+10 per 1"  # Adds 10 points per approval
+  size:
+    exclude: ["*.lock", "package-lock.json"]
+    buckets:
+      - range: "<100"
+        effect: "x5"      # Small PRs get 5x multiplier
+      - range: "100-500"
+        effect: "x1"      # Medium PRs: no change
+      - range: ">500"
+        effect: "x0.5"    # Large PRs get 0.5x penalty
+
+# Queries to execute (at least one required)
+queries:
+  - name: my-reviews
+    query: "is:pr review-requested:@me"
+
+  - name: team-prs
+    query: "is:pr org:myorg"
+    scoring:               # Per-query scoring override
+      base_score: 50
+      age: "+2 per 1h"
+      approvals: "+5 per 1"
+```
+
+### Scoring Factors
+
+Each scoring factor is optional and can use addition (`+N`) or multiplication (`xN`) effects.
+
+#### Age
+
+Format: `"+N per DURATION"` or `"xN per DURATION"`
+
+Duration uses humantime format: `1h`, `30m`, `1d`, `1w`
+
+Examples:
+- `"+1 per 1h"` — adds 1 point per hour of age
+- `"x1.1 per 1d"` — multiplies score by 1.1 per day of age
+
+#### Approvals
+
+Format: `"+N per 1"`, `"xN per 1"`, `"+N"`, or `"xN"`
+
+This is NOT bucket-based — the effect applies per approval count.
+
+Examples:
+- `"+10 per 1"` — adds 10 points per approval
+- `"x2 per 1"` — doubles score per approval
+- `"+50"` — adds 50 points if any approvals exist
+
+#### Size
+
+Bucket-based configuration with optional file exclusions.
+
+**Range formats:**
+- `"<N"` — less than N lines
+- `"<=N"` — less than or equal to N lines
+- `">N"` — greater than N lines
+- `">=N"` — greater than or equal to N lines
+- `"N-M"` — inclusive range from N to M lines
+
+**Effect formats:**
+- `"+N"` — add N points
+- `"xN"` — multiply score by N
+
+**Important:** Size bucket ranges must NOT overlap. The validator will reject configurations with overlapping ranges at startup.
+
+Example:
+
+```yaml
+size:
+  exclude:
+    - "*.lock"
+    - "package-lock.json"
+    - "yarn.lock"
+  buckets:
+    - range: "<100"
+      effect: "x5"      # Small PRs: 5x multiplier
+    - range: "100-500"
+      effect: "x1"      # Medium PRs: no change
+    - range: ">500"
+      effect: "x0.5"    # Large PRs: 0.5x penalty
+```
+
+### Effect Syntax Summary
+
+| Syntax | Meaning |
+|--------|---------|
+| `+N` | Add N points |
+| `xN` | Multiply score by N |
+| `+N per DURATION` | Add N points per time unit (age only) |
+| `xN per DURATION` | Multiply by N per time unit (age only) |
+| `+N per M` | Add N points per M units (approvals only) |
+| `xN per M` | Multiply by N per M units (approvals only) |
+
+### Per-Query Scoring
+
+Queries can override the global scoring configuration. When a PR appears in multiple queries, the **first query's scoring is used** (first-match-wins). Per-query scoring completely replaces global scoring (no merging).
+
+Example:
+
+```yaml
+scoring:
+  base_score: 100
+  age: "+1 per 1h"
+
+queries:
+  - name: urgent
+    query: "is:pr label:urgent"
+    scoring:
+      base_score: 500  # Higher base for urgent PRs
+      age: "+10 per 1h"
+
+  - name: other
+    query: "is:pr org:myorg"
+    # Uses global scoring (no override)
+```
+
+### Config Validation
+
+pr-bro validates your configuration at startup with clear error messages:
+
+- **Unknown YAML keys** are rejected (catches typos like `approvalls` instead of `approvals`)
+- **Overlapping size bucket ranges** are rejected (prevents ambiguous scoring)
+- **Invalid effect syntax** is caught with helpful messages
+
+Validation errors will show exactly what's wrong and where, so you can fix configuration issues quickly.
+
+## Commands
+
+### Default (TUI)
+
+```bash
+pr-bro
+```
+
+Launches interactive TUI when running in a terminal. Shows active PRs by default.
+
+### List
+
+```bash
+# Plain text table output
+pr-bro list
+
+# Show snoozed PRs instead of active
+pr-bro list --show-snoozed
+```
+
+### Open
+
+```bash
+pr-bro open <INDEX>
+```
+
+Open a PR in your browser by its index number (1-based, as shown in list).
+
+### Snooze
+
+```bash
+# Snooze indefinitely
+pr-bro snooze <INDEX>
+
+# Snooze for a duration
+pr-bro snooze <INDEX> --for 2h
+pr-bro snooze <INDEX> --for 3d
+pr-bro snooze <INDEX> --for 1w
+```
+
+Duration format uses humantime: `2h` (2 hours), `3d` (3 days), `1w` (1 week), `30m` (30 minutes).
+
+### Unsnooze
+
+```bash
+pr-bro unsnooze <INDEX>
+```
+
+Unsnooze a PR by its index in the snoozed list (use with `list --show-snoozed`).
+
+### Global Flags
+
+Available with all commands:
+
+| Flag | Description |
+|------|-------------|
+| `-v, --verbose` | Enable verbose logging |
+| `-c, --config PATH` | Path to config file (default: `~/.config/pr-bro/config.yaml`) |
+| `--non-interactive` | Force plain text output even in a terminal |
+| `--format table\|tsv` | Output format when non-interactive (default: `table`) |
+| `--no-cache` | Disable HTTP response caching for this run |
+| `--clear-cache` | Remove cached GitHub API responses and exit |
+
+## TUI Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `j` / `Down` | Next PR |
+| `k` / `Up` | Previous PR |
+| `Enter` / `o` | Open PR in browser |
+| `s` | Snooze (prompts for duration) |
+| `u` | Unsnooze selected PR |
+| `z` | Undo last action |
+| `d` | Show score breakdown detail |
+| `Tab` | Switch between Active/Snoozed view |
+| `r` | Manual refresh (fetches fresh data) |
+| `?` | Show help overlay |
+| `q` / `Ctrl+C` | Quit |
+
+### Snooze Duration Input
+
+When prompted for snooze duration:
+- Enter duration like `2h`, `3d`, `1w` and press `Enter`
+- Leave empty and press `Enter` for indefinite snooze
+- Press `Esc` to cancel
+
+### Score Breakdown
+
+Press `d` to see how the selected PR's score was calculated. Shows:
+- Base score
+- Age contribution (if configured)
+- Approvals contribution (if configured)
+- Size contribution (if configured)
+
+Press `Esc` or `d` again to dismiss.
+
+## Credentials
+
+### GitHub Personal Access Token
+
+pr-bro stores your GitHub token securely in your system keyring:
+- **macOS**: Keychain
+- **Windows**: Credential Manager
+- **Linux**: Secret Service (GNOME Keyring, KWallet)
+
+### First Run
+
+On first run, pr-bro will prompt for your GitHub Personal Access Token. Create one at:
+https://github.com/settings/tokens
+
+**Required scopes:**
+- `repo` (for private repositories)
+- `public_repo` (for public repositories only)
+
+### Re-authenticating
+
+If your token becomes invalid (401 error), pr-bro will automatically prompt you for a new token. In TUI mode, the terminal will be temporarily restored for token input, then resume the TUI.
+
+### Resetting Token
+
+To manually reset your stored token, delete the keyring entry:
+- **macOS**: Open Keychain Access, search for "pr-bro", delete entry
+- **Windows**: Open Credential Manager, search for "pr-bro", remove entry
+- **Linux**: Use your keyring manager to remove the "pr-bro" entry
+
+Then run pr-bro again to be prompted for a new token.
+
+## Caching
+
+pr-bro uses ETag-based HTTP caching to reduce GitHub API rate limit consumption.
+
+### Cache Location
+
+Platform-specific cache directory:
+- **macOS**: `~/Library/Caches/pr-bro`
+- **Linux**: `~/.cache/pr-bro`
+- **Windows**: `%LOCALAPPDATA%\pr-bro\cache`
+
+### Cache Behavior
+
+- **In-memory cache**: Fast access to recently fetched data
+- **Disk cache**: Persistent storage using ETags for validation
+- **Manual refresh** (`r` key in TUI): Bypasses in-memory cache for fresh data
+- **Auto-refresh**: Uses cache (only fetches if data changed on server)
+
+### Cache Management
+
+```bash
+# Disable caching for one run
+pr-bro --no-cache
+
+# Clear all cached responses
+pr-bro --clear-cache
+```
+
+Clearing cache removes all stored API responses but preserves configuration and snooze state.
+
+## License
+
+MIT (placeholder - add LICENSE file for actual license)
