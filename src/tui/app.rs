@@ -56,6 +56,8 @@ pub struct App {
     pub cache_config: CacheConfig,
     pub cache_handle: Option<Arc<DiskCache>>,
     pub verbose: bool,
+    pub is_loading: bool,
+    pub spinner_frame: usize,
 }
 
 impl App {
@@ -93,6 +95,42 @@ impl App {
             cache_config,
             cache_handle,
             verbose,
+            is_loading: false,
+            spinner_frame: 0,
+        }
+    }
+
+    /// Create a new App with empty PR lists in loading state
+    /// Used for launching TUI before data arrives
+    pub fn new_loading(
+        snooze_state: SnoozeState,
+        snooze_path: PathBuf,
+        config: Config,
+        cache_config: CacheConfig,
+        cache_handle: Option<Arc<DiskCache>>,
+        verbose: bool,
+    ) -> Self {
+        Self {
+            active_prs: Vec::new(),
+            snoozed_prs: Vec::new(),
+            table_state: ratatui::widgets::TableState::default(),
+            current_view: View::Active,
+            snooze_state,
+            snooze_path,
+            input_mode: InputMode::Normal,
+            snooze_input: String::new(),
+            flash_message: None,
+            undo_stack: VecDeque::new(),
+            last_refresh: Instant::now(),
+            needs_refresh: false,
+            force_refresh: false,
+            should_quit: false,
+            config,
+            cache_config,
+            cache_handle,
+            verbose,
+            is_loading: true,
+            spinner_frame: 0,
         }
     }
 
@@ -432,5 +470,10 @@ impl App {
         let active_count = self.active_prs.len();
         let snoozed_count = self.snoozed_prs.len();
         self.show_flash(format!("Refreshed ({} active, {} snoozed)", active_count, snoozed_count));
+    }
+
+    /// Advance the loading spinner animation frame
+    pub fn advance_spinner(&mut self) {
+        self.spinner_frame = self.spinner_frame.wrapping_add(1);
     }
 }

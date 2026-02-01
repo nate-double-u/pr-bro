@@ -189,7 +189,35 @@ async fn main() {
         }
     };
 
-    // Fetch and score PRs using reusable function
+    // Detect TTY for interactive mode
+    let is_interactive = std::io::stdout().is_terminal() && !cli.non_interactive;
+
+    // If interactive and default list command (not explicit subcommand), launch TUI
+    if is_interactive && matches!(command, Commands::List { show_snoozed: false }) {
+        if cli.verbose {
+            eprintln!("Launching TUI mode...");
+        }
+
+        // Create App in loading state (empty PR lists)
+        let app = pr_bro::tui::App::new_loading(
+            snooze_state,
+            snooze_path,
+            config,
+            cache_config,
+            cache_handle,
+            cli.verbose,
+        );
+
+        // Launch TUI immediately - it will trigger initial fetch in background
+        if let Err(e) = pr_bro::tui::run_tui(app, client, effective_scoring).await {
+            eprintln!("TUI error: {}", e);
+            std::process::exit(EXIT_NETWORK);
+        }
+
+        std::process::exit(EXIT_SUCCESS);
+    }
+
+    // Non-interactive path: fetch and score PRs before outputting
     let (active_scored, snoozed_scored) = match pr_bro::fetch::fetch_and_score_prs(
         &client,
         &config,
@@ -206,34 +234,6 @@ async fn main() {
             std::process::exit(EXIT_NETWORK);
         }
     };
-
-    // Detect TTY for interactive mode
-    let is_interactive = std::io::stdout().is_terminal() && !cli.non_interactive;
-
-    // If interactive and default list command (not explicit subcommand), launch TUI
-    if is_interactive && matches!(command, Commands::List { show_snoozed: false }) {
-        if cli.verbose {
-            eprintln!("Launching TUI mode...");
-        }
-
-        let app = pr_bro::tui::App::new(
-            active_scored,
-            snoozed_scored,
-            snooze_state,
-            snooze_path,
-            config,
-            cache_config,
-            cache_handle,
-            cli.verbose,
-        );
-
-        if let Err(e) = pr_bro::tui::run_tui(app, client, effective_scoring).await {
-            eprintln!("TUI error: {}", e);
-            std::process::exit(EXIT_NETWORK);
-        }
-
-        std::process::exit(EXIT_SUCCESS);
-    }
 
     // Non-interactive path: use existing CLI behavior
     // Select which list to use based on command

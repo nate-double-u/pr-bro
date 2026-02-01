@@ -6,7 +6,7 @@ fn default_refresh_interval() -> u64 {
     300
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
     /// Global scoring configuration (applies to all queries unless overridden)
     #[serde(default)]
@@ -19,7 +19,7 @@ pub struct Config {
     pub auto_refresh_interval: u64,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct QueryConfig {
     pub name: Option<String>,
     pub query: String,
