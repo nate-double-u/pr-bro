@@ -3,39 +3,102 @@ use super::config::ScoringConfig;
 use super::factors::Effect;
 
 #[derive(Debug, Clone)]
+pub struct FactorContribution {
+    pub label: String,      // e.g. "Age", "Approvals", "Size"
+    pub description: String, // e.g. "+1 per 1h (24 units)", "matched '0' -> x0.5"
+    pub before: f64,        // Score before this factor
+    pub after: f64,         // Score after this factor
+}
+
+#[derive(Debug, Clone)]
+pub struct ScoreBreakdown {
+    pub base_score: f64,
+    pub factors: Vec<FactorContribution>,
+}
+
+#[derive(Debug, Clone)]
 pub struct ScoreResult {
     pub score: f64,
     pub incomplete: bool,
+    pub breakdown: ScoreBreakdown,
 }
 
 pub fn calculate_score(pr: &PullRequest, config: &ScoringConfig) -> ScoreResult {
-    let mut score = config.base_score.unwrap_or(100.0);
+    let base_score = config.base_score.unwrap_or(100.0);
+    let mut score = base_score;
     let incomplete = false;
+    let mut factors = Vec::new();
 
     // Apply age factor (always available - created_at always present)
     if let Some(ref age_str) = config.age {
         if let Ok(effect) = Effect::parse(age_str) {
+            let before = score;
             let age = pr.age();
             let units = calculate_units(&effect, age);
             score = effect.apply(score, units);
+
+            // Build description for age factor
+            let description = match &effect {
+                Effect::AddPerUnit(n, _) => format!("{:+} per unit ({} units)", n, units),
+                Effect::MultiplyPerUnit(n, _) => format!("x{} per unit ({} units)", n, units),
+                Effect::Add(n) => format!("{:+}", n),
+                Effect::Multiply(n) => format!("x{}", n),
+            };
+
+            factors.push(FactorContribution {
+                label: "Age".to_string(),
+                description,
+                before,
+                after: score,
+            });
         }
     }
 
     // Apply approvals factor
     if let Some(ref buckets) = config.approvals {
-        score = apply_bucket_effect(score, pr.approvals as u64, buckets, |b| &b.range, |b| &b.effect);
+        let before = score;
+        let result = apply_bucket_effect(score, pr.approvals as u64, buckets, |b| &b.range, |b| &b.effect);
+        score = result.score;
+
+        // Only add contribution if a bucket matched
+        if let (Some(range), Some(effect)) = (result.matched_range, result.matched_effect) {
+            let description = format!("{} approvals, matched '{}' -> {}", pr.approvals, range, effect);
+            factors.push(FactorContribution {
+                label: "Approvals".to_string(),
+                description,
+                before,
+                after: score,
+            });
+        }
     }
 
     // Apply size factor
     if let Some(ref size_config) = config.size {
         let size = pr.size();
-        score = apply_bucket_effect(score, size, &size_config.buckets, |b| &b.range, |b| &b.effect);
+        let before = score;
+        let result = apply_bucket_effect(score, size, &size_config.buckets, |b| &b.range, |b| &b.effect);
+        score = result.score;
+
+        // Only add contribution if a bucket matched
+        if let (Some(range), Some(effect)) = (result.matched_range, result.matched_effect) {
+            let description = format!("{} lines, matched '{}' -> {}", size, range, effect);
+            factors.push(FactorContribution {
+                label: "Size".to_string(),
+                description,
+                before,
+                after: score,
+            });
+        }
     }
 
     // Floor at zero
     ScoreResult {
         score: score.max(0.0),
         incomplete,
+        breakdown: ScoreBreakdown {
+            base_score,
+            factors,
+        },
     }
 }
 
@@ -53,7 +116,13 @@ fn calculate_units(effect: &Effect, age: chrono::Duration) -> u64 {
     }
 }
 
-fn apply_bucket_effect<T, F1, F2>(score: f64, value: u64, buckets: &[T], get_range: F1, get_effect: F2) -> f64
+struct BucketResult {
+    score: f64,
+    matched_range: Option<String>,
+    matched_effect: Option<String>,
+}
+
+fn apply_bucket_effect<T, F1, F2>(score: f64, value: u64, buckets: &[T], get_range: F1, get_effect: F2) -> BucketResult
 where
     F1: Fn(&T) -> &str,
     F2: Fn(&T) -> &str,
@@ -61,15 +130,25 @@ where
     use super::factors::RangeOp;
 
     for bucket in buckets {
-        if let Ok(range) = RangeOp::parse(get_range(bucket)) {
+        let range_str = get_range(bucket);
+        let effect_str = get_effect(bucket);
+        if let Ok(range) = RangeOp::parse(range_str) {
             if range.matches(value) {
-                if let Ok(effect) = Effect::parse(get_effect(bucket)) {
-                    return effect.apply(score, 1);
+                if let Ok(effect) = Effect::parse(effect_str) {
+                    return BucketResult {
+                        score: effect.apply(score, 1),
+                        matched_range: Some(range_str.to_string()),
+                        matched_effect: Some(effect_str.to_string()),
+                    };
                 }
             }
         }
     }
-    score  // No matching bucket, return unchanged
+    BucketResult {
+        score,
+        matched_range: None,
+        matched_effect: None,
+    }
 }
 
 #[cfg(test)]
