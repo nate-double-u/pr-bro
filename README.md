@@ -96,7 +96,7 @@ queries:
 
   - name: team-prs
     query: "is:pr org:myorg"
-    scoring:               # Per-query scoring override
+    scoring:               # Per-query scoring (merges with global)
       base_score: 50
       age: "+2 per 1h"
       approvals: "+5 per 1"
@@ -161,6 +161,13 @@ size:
       effect: "x0.5"    # Large PRs: 0.5x penalty
 ```
 
+**Exclude pattern behavior:**
+- Patterns match against the **filename only** (basename), not the full file path. For example, `*.lock` will match `Cargo.lock` and `subdir/package-lock.json`.
+- When exclude patterns are configured, pr-bro fetches per-file diff data from the GitHub API to determine which files to exclude. This adds 1-2 API calls per PR (paginated at 100 files per page).
+- If the per-file data fetch fails (e.g., rate limit), pr-bro falls back to the aggregate size from the PR summary (no exclusions applied).
+- Without exclude patterns, no extra API calls are made.
+- Invalid glob patterns are caught at startup during config validation.
+
 #### Labels
 
 Optional. Applies score effects based on GitHub labels on the PR. Multiple matching labels compound their effects sequentially (not first-match). Label matching is **case-insensitive**.
@@ -210,7 +217,7 @@ Labels and previously_reviewed use flat effects (`+N` or `xN`), not per-unit eff
 
 ### Per-Query Scoring
 
-Queries can override the global scoring configuration. When a PR appears in multiple queries, the **first query's scoring is used** (first-match-wins). Per-query scoring completely replaces global scoring (no merging).
+Queries can override individual fields of the global scoring configuration. When a PR appears in multiple queries, the **first query's scoring is used** (first-match-wins). Per-query scoring **merges** with global scoring at the field level — only the fields you specify in the query override the global values; unset fields inherit from the global config.
 
 Example:
 
@@ -218,18 +225,27 @@ Example:
 scoring:
   base_score: 100
   age: "+1 per 1h"
+  approvals: "+10 per 1"
+  size:
+    buckets:
+      - range: "<100"
+        effect: "x5"
+      - range: ">500"
+        effect: "x0.5"
 
 queries:
   - name: urgent
     query: "is:pr label:urgent"
     scoring:
-      base_score: 500  # Higher base for urgent PRs
-      age: "+10 per 1h"
+      age: "+10 per 1h"       # Override: urgent PRs age faster
+      # base_score, approvals, size — all inherited from global
 
   - name: other
     query: "is:pr org:myorg"
-    # Uses global scoring (no override)
+    # No scoring block — uses global scoring entirely
 ```
+
+In this example, the "urgent" query only overrides `age`. It inherits `base_score: 100`, `approvals: "+10 per 1"`, and the size buckets from the global config. Nested `size` config also merges independently — setting `size.exclude` in a query preserves global `size.buckets` and vice versa.
 
 ### Config Validation
 
@@ -239,6 +255,7 @@ pr-bro validates your configuration at startup with clear error messages:
 - **Overlapping size bucket ranges** are rejected (prevents ambiguous scoring)
 - **Invalid effect syntax** is caught with helpful messages
 - **Empty label names** are rejected
+- **Invalid glob patterns** in `size.exclude` are caught (e.g., unclosed character classes like `[invalid`)
 - **Invalid label effects** and **invalid previously_reviewed effects** are caught at startup
 
 Validation errors will show exactly what's wrong and where, so you can fix configuration issues quickly.
