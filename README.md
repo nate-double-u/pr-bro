@@ -217,7 +217,7 @@ Labels and previously_reviewed use flat effects (`+N` or `xN`), not per-unit eff
 
 ### Per-Query Scoring
 
-Queries can override individual fields of the global scoring configuration. When a PR appears in multiple queries, the **first query's scoring is used** (first-match-wins). Per-query scoring **merges** with global scoring at the field level — only the fields you specify in the query override the global values; unset fields inherit from the global config.
+Queries can override individual fields of the global scoring configuration. When a PR appears in multiple queries, the **first query's scoring is used** (first-match-wins). Per-query scoring merges with global scoring at the **leaf level** — only the exact sub-fields you specify in a query override the global values; everything else is inherited. This means setting `scoring.size.exclude` in a query does **not** replace the entire `size` block; global `size.buckets` are preserved (and vice versa).
 
 Example:
 
@@ -230,22 +230,44 @@ scoring:
     buckets:
       - range: "<100"
         effect: "x5"
+      - range: "100-500"
+        effect: "x1"
       - range: ">500"
         effect: "x0.5"
+  labels:
+    - name: "urgent"
+      effect: "+20"
+    - name: "wip"
+      effect: "x0.5"
 
 queries:
   - name: urgent
     query: "is:pr label:urgent"
     scoring:
       age: "+10 per 1h"       # Override: urgent PRs age faster
-      # base_score, approvals, size — all inherited from global
+      size:
+        exclude: ["*.lock"]   # Add exclude — inherits global buckets
+      labels:
+        - name: "urgent"
+          effect: "+50"       # Override: stronger urgent boost for this query
+      # base_score, approvals — inherited from global
+      # size.buckets — inherited from global (not overridden)
+      # label "wip" — inherited from global (not mentioned here)
 
   - name: other
     query: "is:pr org:myorg"
     # No scoring block — uses global scoring entirely
 ```
 
-In this example, the "urgent" query only overrides `age`. It inherits `base_score: 100`, `approvals: "+10 per 1"`, and the size buckets from the global config. Nested `size` config also merges independently — setting `size.exclude` in a query preserves global `size.buckets` and vice versa.
+In this example, the "urgent" query:
+- **Overrides** `age` to `"+10 per 1h"` (urgent PRs age faster).
+- **Adds** `size.exclude` with `["*.lock"]`. Because merging is leaf-level, global `size.buckets` are inherited — setting `size.exclude` does NOT replace the entire `size` block.
+- **Overrides** the "urgent" label effect from `"+20"` to `"+50"`. Labels merge by name (case-insensitive): the query's "urgent" label wins over the global one. The global "wip" label is preserved because the query does not mention it.
+- **Inherits** `base_score`, `approvals`, and `previously_reviewed` from the global config (not specified in the query, so global values apply).
+
+#### YAML Merge Keys
+
+YAML merge keys (`<<:`) are supported by the YAML parser for reducing duplication within your config file. This is a YAML feature processed when reading the file, independent of the runtime merge that combines global and per-query scoring. Note that because pr-bro validates config structure strictly (`deny_unknown_fields`), YAML anchors must be placed inside fields that expect the anchored structure, not at the top level. For advanced YAML anchor/merge-key usage, refer to the [YAML specification](https://yaml.org/type/merge.html).
 
 ### Config Validation
 
