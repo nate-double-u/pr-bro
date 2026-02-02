@@ -30,11 +30,10 @@ cargo install --path .
 
 ## Quick Start
 
-Set your GitHub Personal Access Token as an environment variable, then run pr-bro:
+Set `PR_BRO_GH_TOKEN` to your GitHub Personal Access Token, then run pr-bro:
 
 ```bash
-export PR_BRO_GH_TOKEN="ghp_your_token_here"
-pr-bro
+PR_BRO_GH_TOKEN="ghp_your_token_here" pr-bro
 ```
 
 ### Minimal Configuration
@@ -88,94 +87,13 @@ Queries can include their own `scoring` block to override specific fields from t
 
 For the full configuration reference including all scoring factors, per-query overrides, effect syntax, and validation details, see [Configuration Reference](docs/configuration.md).
 
-## Commands
+Run `pr-bro --help` to see all available commands and flags.
 
-### Default (TUI)
-
-```bash
-pr-bro
-```
-
-Launches interactive TUI when running in a terminal. Shows active PRs by default.
-
-### List
-
-```bash
-# Plain text table output
-pr-bro list
-
-# Show snoozed PRs instead of active
-pr-bro list --show-snoozed
-```
-
-### Open
-
-```bash
-pr-bro open <INDEX>
-```
-
-Open a PR in your browser by its index number (1-based, as shown in list).
-
-### Snooze
-
-```bash
-# Snooze indefinitely
-pr-bro snooze <INDEX>
-
-# Snooze for a duration
-pr-bro snooze <INDEX> --for 2h
-pr-bro snooze <INDEX> --for 3d
-pr-bro snooze <INDEX> --for 1w
-```
-
-Duration format uses humantime: `2h` (2 hours), `3d` (3 days), `1w` (1 week), `30m` (30 minutes).
-
-### Unsnooze
-
-```bash
-pr-bro unsnooze <INDEX>
-```
-
-Unsnooze a PR by its index in the snoozed list (use with `list --show-snoozed`).
-
-### Global Flags
-
-Available with all commands:
-
-| Flag | Description |
-|------|-------------|
-| `-v, --verbose` | Enable verbose logging |
-| `-c, --config PATH` | Path to config file (default: `~/.config/pr-bro/config.yaml`) |
-| `--non-interactive` | Force plain text output even in a terminal |
-| `--format table\|tsv` | Output format when non-interactive (default: `table`) |
-| `--no-cache` | Disable HTTP response caching for this run |
-| `--clear-cache` | Remove cached GitHub API responses and exit |
-
-## TUI Keyboard Shortcuts
-
-| Key | Action |
-|-----|--------|
-| `j` / `Down` | Next PR |
-| `k` / `Up` | Previous PR |
-| `Enter` / `o` | Open PR in browser |
-| `s` | Snooze (prompts for duration) |
-| `u` | Unsnooze selected PR |
-| `z` | Undo last action |
-| `d` | Show score breakdown detail |
-| `Tab` | Switch between Active/Snoozed view |
-| `r` | Manual refresh (fetches fresh data) |
-| `?` | Show help overlay |
-| `q` / `Ctrl+C` | Quit |
+In the TUI, press `?` to see all keyboard shortcuts.
 
 ## Authentication
 
-Set the `PR_BRO_GH_TOKEN` environment variable:
-
-```bash
-export PR_BRO_GH_TOKEN="ghp_your_token_here"
-```
-
-Add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to persist it across sessions.
+Set the `PR_BRO_GH_TOKEN` environment variable with a GitHub Personal Access Token.
 
 **Required scopes:**
 - `repo` (for private repositories)
@@ -183,7 +101,7 @@ Add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to persist it acr
 
 Create a token at: https://github.com/settings/tokens
 
-If not set, pr-bro prompts interactively for the current session.
+If the environment variable is not set, pr-bro will prompt for a token interactively (valid for the current session only).
 
 ## Caching
 
