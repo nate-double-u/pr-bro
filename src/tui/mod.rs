@@ -64,7 +64,7 @@ pub async fn run_tui(
                             // Auth failure: restore terminal, re-prompt, re-init
                             ratatui::restore();
 
-                            match crate::credentials::reprompt_for_token().await {
+                            match crate::credentials::reprompt_for_token() {
                                 Ok(new_token) => {
                                     // Recreate client with new token
                                     match crate::github::create_client(

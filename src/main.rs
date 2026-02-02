@@ -167,7 +167,7 @@ async fn main() {
     }
 
     // Setup credentials (prompts for token on first run)
-    let token = match pr_bro::credentials::setup_token_if_missing().await {
+    let token = match pr_bro::credentials::setup_token_if_missing() {
         Ok(t) => t,
         Err(e) => {
             eprintln!("Credential error: {}", e);
@@ -179,7 +179,7 @@ async fn main() {
         if pr_bro::credentials::get_token_from_env().is_some() {
             eprintln!("Token retrieved from {} env var", pr_bro::credentials::ENV_TOKEN_VAR);
         } else {
-            eprintln!("Token retrieved from system keyring");
+            eprintln!("Token provided via prompt");
         }
     }
 
@@ -272,7 +272,7 @@ async fn main() {
                     eprintln!("Authentication failed: {}", e);
 
                     // Re-prompt for token
-                    let new_token = match pr_bro::credentials::reprompt_for_token().await {
+                    let new_token = match pr_bro::credentials::reprompt_for_token() {
                         Ok(t) => t,
                         Err(e) => {
                             eprintln!("Failed to get new token: {}", e);
