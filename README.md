@@ -13,14 +13,14 @@ GitHub PR review prioritization CLI/TUI
 - Score breakdown detail view (press `d` to see how a PR's score was calculated)
 - ETag-based HTTP caching for rate limit conservation
 - Parallel API fetching for faster startup
-- Secure keyring credential storage (macOS Keychain, Windows Credential Manager, Linux Secret Service)
+- Token authentication via `PR_BRO_GH_TOKEN` environment variable
 - Config validation with clear error messages (catches typos and overlapping size ranges)
 
 ## Installation
 
 ### From Source
 
-Requires Rust toolchain (1.70+) and system keyring support.
+Requires Rust toolchain (1.70+).
 
 ```bash
 cargo install --path .
@@ -29,11 +29,15 @@ cargo install --path .
 ### Prerequisites
 
 - **Rust**: Install from [rustup.rs](https://rustup.rs)
-- **System Keyring**: macOS Keychain (built-in), Windows Credential Manager (built-in), or Linux Secret Service (GNOME Keyring, KWallet)
 
 ## Quick Start
 
-On first run (without `PR_BRO_GH_TOKEN` set), pr-bro will prompt for your GitHub Personal Access Token and store it securely in your system keyring.
+Set your GitHub Personal Access Token as an environment variable, then run pr-bro:
+
+```bash
+export PR_BRO_GH_TOKEN="ghp_your_token_here"
+pr-bro
+```
 
 ### Minimal Configuration
 
@@ -384,47 +388,30 @@ Press `Esc` or `d` again to dismiss.
 
 ### GitHub Personal Access Token
 
-pr-bro stores your GitHub token securely in your system keyring:
-- **macOS**: Keychain
-- **Windows**: Credential Manager
-- **Linux**: Secret Service (GNOME Keyring, KWallet)
-
-### Environment Variable
-
-For CI pipelines, scripts, or environments without a system keyring, set the `PR_BRO_GH_TOKEN` environment variable:
+pr-bro uses the `PR_BRO_GH_TOKEN` environment variable for authentication.
 
 ```bash
 export PR_BRO_GH_TOKEN="ghp_your_token_here"
-pr-bro list
 ```
 
-Behavior:
-- When `PR_BRO_GH_TOKEN` is set and non-empty, the token is used directly with **no keyring access and no interactive prompt**
-- Empty or whitespace-only values are treated as unset (falls through to keyring)
-- If the token is invalid (401), pr-bro will prompt for a new token and store it in the keyring (fix the env var externally for future runs)
-- Verbose mode (`-v`) reports whether the token came from the env var or system keyring
-
-### First Run
-
-On first run (without `PR_BRO_GH_TOKEN` set), pr-bro will prompt for your GitHub Personal Access Token and store it securely in your system keyring. Create one at:
-https://github.com/settings/tokens
+Add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to persist it across sessions.
 
 **Required scopes:**
 - `repo` (for private repositories)
 - `public_repo` (for public repositories only)
 
+Create a token at: https://github.com/settings/tokens
+
+### Behavior
+
+- If `PR_BRO_GH_TOKEN` is not set, pr-bro will prompt for a token interactively (valid for the current session only)
+- Empty or whitespace-only values are treated as unset
+- If the token is invalid (401 error), pr-bro will prompt for a new token
+- Verbose mode (`-v`) reports whether the token came from the env var or interactive prompt
+
 ### Re-authenticating
 
-If your token becomes invalid (401 error), pr-bro will automatically prompt you for a new token. In TUI mode, the terminal will be temporarily restored for token input, then resume the TUI.
-
-### Resetting Token
-
-To manually reset your stored token, delete the keyring entry:
-- **macOS**: Open Keychain Access, search for "pr-bro", delete entry
-- **Windows**: Open Credential Manager, search for "pr-bro", remove entry
-- **Linux**: Use your keyring manager to remove the "pr-bro" entry
-
-Then run pr-bro again to be prompted for a new token.
+If your token becomes invalid (401 error), pr-bro will automatically prompt you for a new token. In TUI mode, the terminal will be temporarily restored for token input, then resume the TUI. Set `PR_BRO_GH_TOKEN` in your shell profile to persist the new token.
 
 ## Caching
 
