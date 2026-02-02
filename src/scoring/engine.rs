@@ -87,20 +87,22 @@ pub fn calculate_score(pr: &PullRequest, config: &ScoringConfig) -> ScoreResult 
 
     // Apply size factor
     if let Some(ref size_config) = config.size {
-        let size = pr.size();
-        let before = score;
-        let result = apply_bucket_effect(score, size, &size_config.buckets, |b| &b.range, |b| &b.effect);
-        score = result.score;
+        if let Some(ref buckets) = size_config.buckets {
+            let size = pr.size();
+            let before = score;
+            let result = apply_bucket_effect(score, size, buckets, |b| &b.range, |b| &b.effect);
+            score = result.score;
 
-        // Only add contribution if a bucket matched
-        if let (Some(range), Some(effect)) = (result.matched_range, result.matched_effect) {
-            let description = format!("{} lines, matched '{}' -> {}", size, range, effect);
-            factors.push(FactorContribution {
-                label: "Size".to_string(),
-                description,
-                before,
-                after: score,
-            });
+            // Only add contribution if a bucket matched
+            if let (Some(range), Some(effect)) = (result.matched_range, result.matched_effect) {
+                let description = format!("{} lines, matched '{}' -> {}", size, range, effect);
+                factors.push(FactorContribution {
+                    label: "Size".to_string(),
+                    description,
+                    before,
+                    after: score,
+                });
+            }
         }
     }
 
@@ -289,9 +291,9 @@ mod tests {
             approvals: None,
             size: Some(SizeConfig {
                 exclude: None,
-                buckets: vec![
+                buckets: Some(vec![
                     SizeBucket { range: "<100".to_string(), effect: "x2".to_string() },
-                ],
+                ]),
             }),
             labels: None,
             previously_reviewed: None,
@@ -310,10 +312,10 @@ mod tests {
             approvals: Some("x1.5 per 1".to_string()),  // x1.5 for 1 approval
             size: Some(SizeConfig {
                 exclude: None,
-                buckets: vec![
+                buckets: Some(vec![
                     SizeBucket { range: "<100".to_string(), effect: "x2".to_string() },
                     SizeBucket { range: ">=100".to_string(), effect: "x1".to_string() },
-                ],
+                ]),
             }),
             labels: None,
             previously_reviewed: None,
@@ -364,10 +366,10 @@ mod tests {
             approvals: None,
             size: Some(SizeConfig {
                 exclude: None,
-                buckets: vec![
+                buckets: Some(vec![
                     SizeBucket { range: "<100".to_string(), effect: "x2".to_string() },  // Matches first
                     SizeBucket { range: "<200".to_string(), effect: "x3".to_string() },  // Also matches but not used
-                ],
+                ]),
             }),
             labels: None,
             previously_reviewed: None,
@@ -526,10 +528,10 @@ mod tests {
             approvals: None,
             size: Some(SizeConfig {
                 exclude: None,
-                buckets: vec![
+                buckets: Some(vec![
                     SizeBucket { range: "<100".to_string(), effect: "x5".to_string() },
                     SizeBucket { range: ">=100".to_string(), effect: "x1".to_string() },
-                ],
+                ]),
             }),
             labels: None,
             previously_reviewed: None,
@@ -552,9 +554,9 @@ mod tests {
             approvals: Some("+10 per 1".to_string()),
             size: Some(SizeConfig {
                 exclude: None,
-                buckets: vec![
+                buckets: Some(vec![
                     SizeBucket { range: "<100".to_string(), effect: "x2".to_string() },
-                ],
+                ]),
             }),
             labels: Some(vec![
                 LabelEffect { name: "urgent".to_string(), effect: "+20".to_string() }

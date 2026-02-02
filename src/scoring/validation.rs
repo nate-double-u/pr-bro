@@ -43,24 +43,26 @@ pub fn validate_scoring(config: &ScoringConfig) -> Result<(), Vec<String>> {
 
     // Validate size buckets
     if let Some(ref size_config) = config.size {
-        for (i, bucket) in size_config.buckets.iter().enumerate() {
-            if let Err(e) = RangeOp::parse(&bucket.range) {
-                errors.push(format!(
-                    "scoring.size.buckets[{}].range: invalid '{}' - {}",
-                    i, bucket.range, e
-                ));
+        if let Some(ref buckets) = size_config.buckets {
+            for (i, bucket) in buckets.iter().enumerate() {
+                if let Err(e) = RangeOp::parse(&bucket.range) {
+                    errors.push(format!(
+                        "scoring.size.buckets[{}].range: invalid '{}' - {}",
+                        i, bucket.range, e
+                    ));
+                }
+                if let Err(e) = Effect::parse(&bucket.effect) {
+                    errors.push(format!(
+                        "scoring.size.buckets[{}].effect: invalid '{}' - {}",
+                        i, bucket.effect, e
+                    ));
+                }
             }
-            if let Err(e) = Effect::parse(&bucket.effect) {
-                errors.push(format!(
-                    "scoring.size.buckets[{}].effect: invalid '{}' - {}",
-                    i, bucket.effect, e
-                ));
-            }
-        }
 
-        // Check for overlapping ranges
-        if let Err(e) = check_bucket_overlaps(&size_config.buckets) {
-            errors.push(e);
+            // Check for overlapping ranges
+            if let Err(e) = check_bucket_overlaps(buckets) {
+                errors.push(e);
+            }
         }
 
         // Validate size exclude patterns
@@ -250,9 +252,9 @@ mod tests {
             approvals: None,
             size: Some(SizeConfig {
                 exclude: None,
-                buckets: vec![
+                buckets: Some(vec![
                     SizeBucket { range: "<100".to_string(), effect: "bad".to_string() },
-                ],
+                ]),
             }),
             labels: None,
             previously_reviewed: None,
@@ -299,10 +301,10 @@ mod tests {
             approvals: None,
             size: Some(SizeConfig {
                 exclude: None,
-                buckets: vec![
+                buckets: Some(vec![
                     SizeBucket { range: "<100".to_string(), effect: "x5".to_string() },
                     SizeBucket { range: ">=100".to_string(), effect: "x1".to_string() },
-                ],
+                ]),
             }),
             labels: None,
             previously_reviewed: None,
@@ -318,10 +320,10 @@ mod tests {
             approvals: None,
             size: Some(SizeConfig {
                 exclude: None,
-                buckets: vec![
+                buckets: Some(vec![
                     SizeBucket { range: "<=100".to_string(), effect: "x5".to_string() },
                     SizeBucket { range: ">=100".to_string(), effect: "x1".to_string() },
-                ],
+                ]),
             }),
             labels: None,
             previously_reviewed: None,
@@ -342,10 +344,10 @@ mod tests {
             approvals: None,
             size: Some(SizeConfig {
                 exclude: None,
-                buckets: vec![
+                buckets: Some(vec![
                     SizeBucket { range: "100-500".to_string(), effect: "x2".to_string() },
                     SizeBucket { range: "300-700".to_string(), effect: "x1".to_string() },
-                ],
+                ]),
             }),
             labels: None,
             previously_reviewed: None,
@@ -364,10 +366,10 @@ mod tests {
             approvals: None,
             size: Some(SizeConfig {
                 exclude: None,
-                buckets: vec![
+                buckets: Some(vec![
                     SizeBucket { range: "100-200".to_string(), effect: "x2".to_string() },
                     SizeBucket { range: "300-400".to_string(), effect: "x1".to_string() },
-                ],
+                ]),
             }),
             labels: None,
             previously_reviewed: None,
@@ -383,10 +385,10 @@ mod tests {
             approvals: None,
             size: Some(SizeConfig {
                 exclude: None,
-                buckets: vec![
+                buckets: Some(vec![
                     SizeBucket { range: "150".to_string(), effect: "x2".to_string() },
                     SizeBucket { range: "100-200".to_string(), effect: "x1".to_string() },
-                ],
+                ]),
             }),
             labels: None,
             previously_reviewed: None,
@@ -405,10 +407,10 @@ mod tests {
             approvals: None,
             size: Some(SizeConfig {
                 exclude: None,
-                buckets: vec![
+                buckets: Some(vec![
                     SizeBucket { range: "<100".to_string(), effect: "x2".to_string() },
                     SizeBucket { range: "<200".to_string(), effect: "x1".to_string() },
-                ],
+                ]),
             }),
             labels: None,
             previously_reviewed: None,
@@ -427,10 +429,10 @@ mod tests {
             approvals: None,
             size: Some(SizeConfig {
                 exclude: None,
-                buckets: vec![
+                buckets: Some(vec![
                     SizeBucket { range: ">200".to_string(), effect: "x2".to_string() },
                     SizeBucket { range: "<100".to_string(), effect: "x1".to_string() },
-                ],
+                ]),
             }),
             labels: None,
             previously_reviewed: None,
@@ -530,9 +532,9 @@ mod tests {
             approvals: None,
             size: Some(SizeConfig {
                 exclude: Some(vec!["*.lock".to_string(), "*.json".to_string()]),
-                buckets: vec![
+                buckets: Some(vec![
                     SizeBucket { range: "<100".to_string(), effect: "x5".to_string() },
-                ],
+                ]),
             }),
             labels: None,
             previously_reviewed: None,
@@ -548,9 +550,9 @@ mod tests {
             approvals: None,
             size: Some(SizeConfig {
                 exclude: Some(vec!["[invalid".to_string()]),
-                buckets: vec![
+                buckets: Some(vec![
                     SizeBucket { range: "<100".to_string(), effect: "x5".to_string() },
-                ],
+                ]),
             }),
             labels: None,
             previously_reviewed: None,
@@ -570,9 +572,9 @@ mod tests {
             approvals: None,
             size: Some(SizeConfig {
                 exclude: Some(vec!["[bad".to_string()]),  // Error 2
-                buckets: vec![
+                buckets: Some(vec![
                     SizeBucket { range: "<100".to_string(), effect: "x5".to_string() },
-                ],
+                ]),
             }),
             labels: None,
             previously_reviewed: None,
