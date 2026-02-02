@@ -46,19 +46,6 @@ queries:
     query: "is:pr review-requested:@me"
 ```
 
-### Running
-
-```bash
-# Launch interactive TUI (default)
-pr-bro
-
-# Plain text table output (non-interactive)
-pr-bro list
-
-# Show snoozed PRs
-pr-bro list --show-snoozed
-```
-
 ## Configuration
 
 Configuration file location: `~/.config/pr-bro/config.yaml`
@@ -111,4 +98,4 @@ For details on cache location and behavior, see [Caching](docs/caching.md).
 
 ## License
 
-MIT (placeholder - add LICENSE file for actual license)
+[MIT](LICENSE)
