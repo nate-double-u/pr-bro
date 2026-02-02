@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// Label-based scoring effect.
@@ -77,7 +78,7 @@ impl Default for ScoringConfig {
             approvals: Some("+10 per 1".to_string()),
             size: Some(SizeConfig {
                 exclude: None,
-                buckets: vec![
+                buckets: Some(vec![
                     SizeBucket {
                         range: "<100".to_string(),
                         effect: "x5".to_string(),
@@ -90,7 +91,7 @@ impl Default for ScoringConfig {
                         range: ">500".to_string(),
                         effect: "x0.5".to_string(),
                     },
-                ],
+                ]),
             }),
             labels: None,
             previously_reviewed: None,
@@ -115,7 +116,7 @@ pub fn merge_scoring_configs(
         age: query.age.clone().or_else(|| global.age.clone()),
         approvals: query.approvals.clone().or_else(|| global.approvals.clone()),
         size: merge_size_configs(global.size.as_ref(), query.size.as_ref()),
-        labels: query.labels.clone().or_else(|| global.labels.clone()),
+        labels: merge_label_configs(global.labels.as_ref(), query.labels.as_ref()),
         previously_reviewed: query
             .previously_reviewed
             .clone()
@@ -123,10 +124,12 @@ pub fn merge_scoring_configs(
     }
 }
 
-/// Merge SizeConfig with nested field handling.
+/// Merge SizeConfig with leaf-level field handling.
 /// When both global and query have SizeConfig:
 /// - exclude: per-query overrides global (or falls through if None)
-/// - buckets: per-query overrides global if non-empty (empty vec falls through to global)
+/// - buckets: per-query overrides global (or falls through if None)
+///
+/// Absent field (None) means inherit from global; explicitly set field means override.
 fn merge_size_configs(
     global: Option<&SizeConfig>,
     query: Option<&SizeConfig>,
@@ -134,14 +137,35 @@ fn merge_size_configs(
     match (query, global) {
         (Some(q), Some(g)) => Some(SizeConfig {
             exclude: q.exclude.clone().or_else(|| g.exclude.clone()),
-            buckets: if !q.buckets.is_empty() {
-                q.buckets.clone()
-            } else {
-                g.buckets.clone()
-            },
+            buckets: q.buckets.clone().or_else(|| g.buckets.clone()),
         }),
         (Some(q), None) => Some(q.clone()),
         (None, g) => g.cloned(),
+    }
+}
+
+/// Merge label configs by name (case-insensitive).
+/// Query labels override global labels with same name.
+/// Global labels not in query are preserved.
+fn merge_label_configs(
+    global: Option<&Vec<LabelEffect>>,
+    query: Option<&Vec<LabelEffect>>,
+) -> Option<Vec<LabelEffect>> {
+    match (query, global) {
+        (None, g) => g.cloned(),
+        (Some(q), None) => Some(q.clone()),
+        (Some(q), Some(g)) => {
+            let mut merged: HashMap<String, LabelEffect> = HashMap::new();
+            // Add global labels first (lowercase keys for case-insensitive dedup)
+            for label in g {
+                merged.insert(label.name.to_lowercase(), label.clone());
+            }
+            // Override with query labels (query wins on collision)
+            for label in q {
+                merged.insert(label.name.to_lowercase(), label.clone());
+            }
+            Some(merged.into_values().collect())
+        }
     }
 }
 
@@ -158,7 +182,7 @@ pub struct SizeConfig {
 
     /// Size buckets mapping line count ranges to effects
     #[serde(default)]
-    pub buckets: Vec<SizeBucket>,
+    pub buckets: Option<Vec<SizeBucket>>,
 }
 
 /// Size factor bucket.
@@ -237,7 +261,7 @@ size:
 
         let size = config.size.unwrap();
         assert_eq!(size.exclude.unwrap().len(), 2);
-        assert_eq!(size.buckets.len(), 2);
+        assert_eq!(size.buckets.as_ref().unwrap().len(), 2);
     }
 
     #[test]
@@ -261,7 +285,7 @@ buckets:
 "#;
         let config: SizeConfig = serde_saphyr::from_str(yaml).unwrap();
         assert!(config.exclude.is_none());
-        assert_eq!(config.buckets.len(), 1);
+        assert_eq!(config.buckets.as_ref().unwrap().len(), 1);
     }
 
     #[test]
@@ -273,7 +297,7 @@ exclude:
 "#;
         let config: SizeConfig = serde_saphyr::from_str(yaml).unwrap();
         assert_eq!(config.exclude.as_ref().unwrap().len(), 2);
-        assert!(config.buckets.is_empty());
+        assert!(config.buckets.is_none());
     }
 
     #[test]
@@ -344,10 +368,10 @@ previously_reviewed: "x0.5"
             approvals: Some("+10 per 1".to_string()),
             size: Some(SizeConfig {
                 exclude: Some(vec!["*.lock".to_string()]),
-                buckets: vec![SizeBucket {
+                buckets: Some(vec![SizeBucket {
                     range: "<100".to_string(),
                     effect: "x5".to_string(),
-                }],
+                }]),
             }),
             labels: Some(vec![LabelEffect {
                 name: "urgent".to_string(),
@@ -409,10 +433,10 @@ previously_reviewed: "x0.5"
             approvals: None,
             size: Some(SizeConfig {
                 exclude: Some(vec!["*.lock".to_string()]),
-                buckets: vec![SizeBucket {
+                buckets: Some(vec![SizeBucket {
                     range: "<100".to_string(),
                     effect: "x5".to_string(),
-                }],
+                }]),
             }),
             labels: None,
             previously_reviewed: None,
@@ -425,10 +449,10 @@ previously_reviewed: "x0.5"
             approvals: None,
             size: Some(SizeConfig {
                 exclude: None,
-                buckets: vec![SizeBucket {
+                buckets: Some(vec![SizeBucket {
                     range: "<50".to_string(),
                     effect: "x10".to_string(),
-                }],
+                }]),
             }),
             labels: None,
             previously_reviewed: None,
@@ -438,36 +462,37 @@ previously_reviewed: "x0.5"
         let size = result.size.unwrap();
         // exclude falls through from global
         assert_eq!(size.exclude, Some(vec!["*.lock".to_string()]));
-        // buckets from query (non-empty)
-        assert_eq!(size.buckets.len(), 1);
-        assert_eq!(size.buckets[0].range, "<50");
+        // buckets from query (explicitly set)
+        let buckets = size.buckets.unwrap();
+        assert_eq!(buckets.len(), 1);
+        assert_eq!(buckets[0].range, "<50");
     }
 
     #[test]
-    fn test_merge_size_config_empty_buckets_falls_through() {
+    fn test_merge_size_config_absent_buckets_falls_through() {
         let global = ScoringConfig {
             base_score: None,
             age: None,
             approvals: None,
             size: Some(SizeConfig {
                 exclude: None,
-                buckets: vec![SizeBucket {
+                buckets: Some(vec![SizeBucket {
                     range: "<100".to_string(),
                     effect: "x5".to_string(),
-                }],
+                }]),
             }),
             labels: None,
             previously_reviewed: None,
         };
 
-        // Query has size with empty buckets and no exclude
+        // Query has size with absent buckets (None = inherit)
         let query = ScoringConfig {
             base_score: None,
             age: None,
             approvals: None,
             size: Some(SizeConfig {
                 exclude: None,
-                buckets: vec![],
+                buckets: None,
             }),
             labels: None,
             previously_reviewed: None,
@@ -475,9 +500,10 @@ previously_reviewed: "x0.5"
 
         let result = merge_scoring_configs(&global, Some(&query));
         let size = result.size.unwrap();
-        // Empty buckets fall through to global
-        assert_eq!(size.buckets.len(), 1);
-        assert_eq!(size.buckets[0].range, "<100");
+        // Absent buckets (None) fall through to global
+        let buckets = size.buckets.unwrap();
+        assert_eq!(buckets.len(), 1);
+        assert_eq!(buckets[0].range, "<100");
     }
 
     #[test]
@@ -488,7 +514,7 @@ previously_reviewed: "x0.5"
             approvals: None,
             size: Some(SizeConfig {
                 exclude: Some(vec!["*.lock".to_string()]),
-                buckets: vec![],
+                buckets: None,
             }),
             labels: None,
             previously_reviewed: None,
@@ -500,7 +526,7 @@ previously_reviewed: "x0.5"
             approvals: None,
             size: Some(SizeConfig {
                 exclude: Some(vec!["*.json".to_string()]),
-                buckets: vec![],
+                buckets: None,
             }),
             labels: None,
             previously_reviewed: None,
@@ -529,5 +555,249 @@ previously_reviewed: "x0.5"
         let result = merge_scoring_configs(&global, Some(&query));
         // Should behave same as no query — returns global values
         assert_eq!(result, global);
+    }
+
+    // --- Leaf-level size merge tests ---
+
+    #[test]
+    fn test_merge_size_exclude_inherits_global_buckets() {
+        // Query has only size.exclude, global has size.buckets
+        let global = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: Some(SizeConfig {
+                exclude: None,
+                buckets: Some(vec![SizeBucket {
+                    range: "<100".to_string(),
+                    effect: "x5".to_string(),
+                }]),
+            }),
+            labels: None,
+            previously_reviewed: None,
+        };
+
+        let query = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: Some(SizeConfig {
+                exclude: Some(vec!["*.lock".to_string()]),
+                buckets: None, // absent = inherit
+            }),
+            labels: None,
+            previously_reviewed: None,
+        };
+
+        let result = merge_scoring_configs(&global, Some(&query));
+        let size = result.size.unwrap();
+        // exclude from query
+        assert_eq!(size.exclude, Some(vec!["*.lock".to_string()]));
+        // buckets inherited from global
+        let buckets = size.buckets.unwrap();
+        assert_eq!(buckets.len(), 1);
+        assert_eq!(buckets[0].range, "<100");
+    }
+
+    #[test]
+    fn test_merge_size_buckets_inherits_global_exclude() {
+        // Query has only size.buckets, global has size.exclude
+        let global = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: Some(SizeConfig {
+                exclude: Some(vec!["*.lock".to_string()]),
+                buckets: None,
+            }),
+            labels: None,
+            previously_reviewed: None,
+        };
+
+        let query = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: Some(SizeConfig {
+                exclude: None, // absent = inherit
+                buckets: Some(vec![SizeBucket {
+                    range: "<200".to_string(),
+                    effect: "x3".to_string(),
+                }]),
+            }),
+            labels: None,
+            previously_reviewed: None,
+        };
+
+        let result = merge_scoring_configs(&global, Some(&query));
+        let size = result.size.unwrap();
+        // exclude inherited from global
+        assert_eq!(size.exclude, Some(vec!["*.lock".to_string()]));
+        // buckets from query
+        let buckets = size.buckets.unwrap();
+        assert_eq!(buckets.len(), 1);
+        assert_eq!(buckets[0].range, "<200");
+    }
+
+    // --- Label merge tests ---
+
+    #[test]
+    fn test_merge_labels_by_name_query_wins() {
+        let global = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: None,
+            labels: Some(vec![LabelEffect {
+                name: "foo".to_string(),
+                effect: "x3".to_string(),
+            }]),
+            previously_reviewed: None,
+        };
+
+        let query = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: None,
+            labels: Some(vec![LabelEffect {
+                name: "foo".to_string(),
+                effect: "x2".to_string(),
+            }]),
+            previously_reviewed: None,
+        };
+
+        let result = merge_scoring_configs(&global, Some(&query));
+        let labels = result.labels.unwrap();
+        assert_eq!(labels.len(), 1);
+        assert_eq!(labels[0].name, "foo");
+        assert_eq!(labels[0].effect, "x2"); // query wins
+    }
+
+    #[test]
+    fn test_merge_labels_preserves_unmentioned_global() {
+        let global = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: None,
+            labels: Some(vec![
+                LabelEffect { name: "foo".to_string(), effect: "+5".to_string() },
+                LabelEffect { name: "bar".to_string(), effect: "+10".to_string() },
+            ]),
+            previously_reviewed: None,
+        };
+
+        let query = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: None,
+            labels: Some(vec![
+                LabelEffect { name: "foo".to_string(), effect: "+20".to_string() },
+            ]),
+            previously_reviewed: None,
+        };
+
+        let result = merge_scoring_configs(&global, Some(&query));
+        let labels = result.labels.unwrap();
+        assert_eq!(labels.len(), 2);
+        // Use find to avoid order dependence (HashMap)
+        let foo = labels.iter().find(|l| l.name == "foo").unwrap();
+        assert_eq!(foo.effect, "+20"); // from query
+        let bar = labels.iter().find(|l| l.name == "bar").unwrap();
+        assert_eq!(bar.effect, "+10"); // preserved from global
+    }
+
+    #[test]
+    fn test_merge_labels_case_insensitive() {
+        let global = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: None,
+            labels: Some(vec![LabelEffect {
+                name: "Urgent".to_string(),
+                effect: "+10".to_string(),
+            }]),
+            previously_reviewed: None,
+        };
+
+        let query = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: None,
+            labels: Some(vec![LabelEffect {
+                name: "urgent".to_string(),
+                effect: "+20".to_string(),
+            }]),
+            previously_reviewed: None,
+        };
+
+        let result = merge_scoring_configs(&global, Some(&query));
+        let labels = result.labels.unwrap();
+        // Only one entry — case-insensitive dedup
+        assert_eq!(labels.len(), 1);
+        assert_eq!(labels[0].name, "urgent"); // query case preserved
+        assert_eq!(labels[0].effect, "+20"); // query value wins
+    }
+
+    #[test]
+    fn test_merge_labels_no_global() {
+        let global = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: None,
+            labels: None,
+            previously_reviewed: None,
+        };
+
+        let query = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: None,
+            labels: Some(vec![LabelEffect {
+                name: "foo".to_string(),
+                effect: "+5".to_string(),
+            }]),
+            previously_reviewed: None,
+        };
+
+        let result = merge_scoring_configs(&global, Some(&query));
+        let labels = result.labels.unwrap();
+        assert_eq!(labels.len(), 1);
+        assert_eq!(labels[0].name, "foo");
+    }
+
+    #[test]
+    fn test_merge_labels_no_query() {
+        let global = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: None,
+            labels: Some(vec![LabelEffect {
+                name: "bar".to_string(),
+                effect: "+10".to_string(),
+            }]),
+            previously_reviewed: None,
+        };
+
+        let query = ScoringConfig {
+            base_score: None,
+            age: None,
+            approvals: None,
+            size: None,
+            labels: None,
+            previously_reviewed: None,
+        };
+
+        let result = merge_scoring_configs(&global, Some(&query));
+        let labels = result.labels.unwrap();
+        assert_eq!(labels.len(), 1);
+        assert_eq!(labels[0].name, "bar");
     }
 }
