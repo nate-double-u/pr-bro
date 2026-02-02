@@ -157,6 +157,7 @@ pub struct SizeConfig {
     pub exclude: Option<Vec<String>>,
 
     /// Size buckets mapping line count ranges to effects
+    #[serde(default)]
     pub buckets: Vec<SizeBucket>,
 }
 
@@ -261,6 +262,18 @@ buckets:
         let config: SizeConfig = serde_saphyr::from_str(yaml).unwrap();
         assert!(config.exclude.is_none());
         assert_eq!(config.buckets.len(), 1);
+    }
+
+    #[test]
+    fn test_size_config_exclude_only() {
+        let yaml = r#"
+exclude:
+  - "*.lock"
+  - "package-lock.json"
+"#;
+        let config: SizeConfig = serde_saphyr::from_str(yaml).unwrap();
+        assert_eq!(config.exclude.as_ref().unwrap().len(), 2);
+        assert!(config.buckets.is_empty());
     }
 
     #[test]

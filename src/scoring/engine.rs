@@ -130,7 +130,7 @@ pub fn calculate_score(pr: &PullRequest, config: &ScoringConfig) -> ScoreResult 
                 score = effect.apply(score, 1);
                 factors.push(FactorContribution {
                     label: "Previously Reviewed".to_string(),
-                    description: format!("user has reviewed -> {}", reviewed_effect_str),
+                    description: format!("You have previously reviewed -> {}", reviewed_effect_str),
                     before,
                     after: score,
                 });
