@@ -1,3 +1,4 @@
+use chrono::Utc;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Cell, Clear, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, Tabs};
 use crate::tui::app::{App, InputMode, View};
@@ -360,7 +361,7 @@ fn score_bar(score: f64, max_score: f64, width: usize) -> Line<'static> {
 
 /// Render the snooze duration input popup
 fn render_snooze_popup(frame: &mut Frame, app: &App) {
-    let popup_area = centered_rect_fixed(40, 6, frame.area());
+    let popup_area = centered_rect_fixed(40, 7, frame.area());
 
     // Clear the background
     frame.render_widget(Clear, popup_area);
@@ -376,10 +377,11 @@ fn render_snooze_popup(frame: &mut Frame, app: &App) {
     // Get inner area (inside the border)
     let inner = block.inner(popup_area);
 
-    // Split inner area for input, duration preview, and help text
+    // Split inner area for input, duration preview, end time, and help text
     let chunks = Layout::vertical([
         Constraint::Length(1),  // Input line
         Constraint::Length(1),  // Duration preview
+        Constraint::Length(1),  // End time preview
         Constraint::Length(1),  // Help text (Enter/Esc)
     ])
     .split(inner);
@@ -417,10 +419,23 @@ fn render_snooze_popup(frame: &mut Frame, app: &App) {
     ]));
     frame.render_widget(preview, chunks[1]);
 
+    // Render end time preview
+    let end_time_text = match &parse_result {
+        None => "Ends: never".to_string(),
+        Some(Ok(d)) => {
+            let end = Utc::now() + chrono::Duration::from_std(*d).unwrap_or_default();
+            format!("Ends: {}", end.format("%b %-d, %Y %H:%M UTC"))
+        }
+        Some(Err(_)) => String::new(),
+    };
+    let end_time = Paragraph::new(end_time_text)
+        .style(Style::default().fg(theme::MUTED));
+    frame.render_widget(end_time, chunks[2]);
+
     // Render help text
     let help = Paragraph::new("Enter: confirm | Esc: cancel")
         .style(Style::default().fg(theme::MUTED));
-    frame.render_widget(help, chunks[2]);
+    frame.render_widget(help, chunks[3]);
 }
 
 /// Create a centered rectangle with fixed width and height
