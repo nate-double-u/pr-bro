@@ -1,4 +1,4 @@
-use chrono::Local;
+use chrono::{Datelike, Local};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Cell, Clear, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, Tabs};
 use crate::tui::app::{App, InputMode, View};
@@ -423,8 +423,24 @@ fn render_snooze_popup(frame: &mut Frame, app: &App) {
     let end_time_text = match &parse_result {
         None => "Ends: never".to_string(),
         Some(Ok(d)) => {
-            let end = Local::now() + chrono::Duration::from_std(*d).unwrap_or_default();
-            format!("Ends: {}", end.format("%b %-d, %Y %H:%M"))
+            let now = Local::now();
+            let end = now + chrono::Duration::from_std(*d).unwrap_or_default();
+            let days_away = (end.date_naive() - now.date_naive()).num_days();
+            let time = end.format("%H:%M");
+            let date_part = if days_away == 0 {
+                "today".to_string()
+            } else if days_away == 1 {
+                "tomorrow".to_string()
+            } else if days_away >= 2 && days_away <= 6 {
+                format!("this {}", end.format("%A"))
+            } else if days_away >= 7 && days_away <= 13 {
+                format!("next {}", end.format("%A"))
+            } else if end.year() == now.year() {
+                end.format("%b %-d").to_string()
+            } else {
+                end.format("%b %-d, %Y").to_string()
+            };
+            format!("Ends: {} {}", date_part, time)
         }
         Some(Err(_)) => String::new(),
     };
