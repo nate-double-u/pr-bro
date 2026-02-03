@@ -36,6 +36,11 @@ pub enum UndoAction {
         title: String,
         until: Option<DateTime<Utc>>,
     },
+    Resnooze {
+        url: String,
+        title: String,
+        previous_until: Option<DateTime<Utc>>,
+    },
 }
 
 pub struct App {
@@ -222,10 +227,9 @@ impl App {
         Ok(())
     }
 
-    /// Start snooze input mode
+    /// Start snooze input mode (works on both Active and Snoozed views)
     pub fn start_snooze_input(&mut self) {
-        // Only allow snoozing in Active view with a selected PR
-        if matches!(self.current_view, View::Active) && self.selected_pr().is_some() {
+        if self.selected_pr().is_some() {
             self.input_mode = InputMode::SnoozeInput;
             self.snooze_input.clear();
         }
@@ -262,6 +266,13 @@ impl App {
             }
         };
 
+        // Capture old snooze_until before overwriting (needed for undo on re-snooze)
+        let old_until = self
+            .snooze_state
+            .snoozed_entries()
+            .get(&url)
+            .and_then(|entry| entry.snooze_until);
+
         // Apply snooze
         self.snooze_state.snooze(url.clone(), computed_until);
 
@@ -272,17 +283,33 @@ impl App {
             return;
         }
 
-        // Push to undo stack
-        self.push_undo(UndoAction::Snoozed {
-            url: url.clone(),
-            title: title.clone(),
-        });
+        // Branch behavior based on current view
+        match self.current_view {
+            View::Active => {
+                // Push to undo stack
+                self.push_undo(UndoAction::Snoozed {
+                    url: url.clone(),
+                    title: title.clone(),
+                });
 
-        // Move PR from active to snoozed
-        self.move_pr_between_lists(&url, true);
+                // Move PR from active to snoozed
+                self.move_pr_between_lists(&url, true);
 
-        // Show flash message
-        self.show_flash(format!("Snoozed: {} (z to undo)", title));
+                // Show flash message
+                self.show_flash(format!("Snoozed: {} (z to undo)", title));
+            }
+            View::Snoozed => {
+                // Push re-snooze to undo stack with previous duration
+                self.push_undo(UndoAction::Resnooze {
+                    url: url.clone(),
+                    title: title.clone(),
+                    previous_until: old_until,
+                });
+
+                // PR stays in snoozed list -- no move needed
+                self.show_flash(format!("Re-snoozed: {} (z to undo)", title));
+            }
+        }
 
         // Return to normal mode
         self.input_mode = InputMode::Normal;
@@ -378,6 +405,19 @@ impl App {
                 self.move_pr_between_lists(&url, true);
 
                 self.show_flash(format!("Undid unsnooze: {}", title));
+            }
+            UndoAction::Resnooze { url, title, previous_until } => {
+                // Undo a re-snooze: restore the previous snooze duration
+                self.snooze_state.snooze(url.clone(), previous_until);
+
+                // Save to disk
+                if let Err(e) = crate::snooze::save_snooze_state(&self.snooze_path, &self.snooze_state) {
+                    self.show_flash(format!("Failed to save snooze state: {}", e));
+                    return;
+                }
+
+                // PR stays in snoozed list -- no move needed
+                self.show_flash(format!("Undid re-snooze: {}", title));
             }
         }
     }
