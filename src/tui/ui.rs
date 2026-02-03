@@ -99,53 +99,116 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
     let pr_count = prs.len();
     let selected_pos = app.table_state.selected().unwrap_or(0);
 
-    // Build rows
-    let rows: Vec<Row> = prs
-        .iter()
-        .enumerate()
-        .map(|(idx, (pr, score_result))| {
-            let index = format!("{}.", idx + 1);
-            let score_str = format_score(score_result.score, score_result.incomplete);
-            let bar_line = score_bar(score_result.score, max_score, 8);
+    // Build rows, widths, and header based on current view
+    let (rows, widths, header_cells): (Vec<Row>, Vec<Constraint>, Vec<&str>) =
+        if matches!(app.current_view, View::Snoozed) {
+            // Snoozed view: 5 columns with Duration
+            let rows: Vec<Row> = prs
+                .iter()
+                .enumerate()
+                .map(|(idx, (pr, score_result))| {
+                    let index = format!("{}.", idx + 1);
+                    let score_str = format_score(score_result.score, score_result.incomplete);
+                    let bar_line = score_bar(score_result.score, max_score, 8);
 
-            // Build score cell with colored text and bar
-            let score_color = theme::score_color(score_result.score, max_score);
-            let mut score_spans = vec![
-                Span::styled(format!("{:>5} ", score_str), Style::default().fg(score_color))
+                    // Build score cell with colored text and bar
+                    let score_color = theme::score_color(score_result.score, max_score);
+                    let mut score_spans = vec![
+                        Span::styled(format!("{:>5} ", score_str), Style::default().fg(score_color))
+                    ];
+                    score_spans.extend(bar_line.spans);
+                    let score_line = Line::from(score_spans);
+
+                    let title = pr.title.clone();
+
+                    // Get duration from snooze entry
+                    let duration = app.snooze_state
+                        .snoozed_entries()
+                        .get(&pr.url)
+                        .map(|entry| entry.format_remaining())
+                        .unwrap_or_else(|| "unknown".to_string());
+
+                    // Alternating row background (odd rows get subtle background)
+                    let row_style = if idx % 2 == 1 {
+                        Style::default().bg(theme::ROW_ALT_BG)
+                    } else {
+                        Style::default()
+                    };
+
+                    Row::new(vec![
+                        Cell::from(index).style(Style::default().fg(theme::INDEX_COLOR)),
+                        Cell::from(score_line),
+                        Cell::from(title),
+                        Cell::from(duration).style(Style::default().fg(theme::MUTED)),
+                        Cell::from(pr.short_ref()),
+                    ])
+                    .style(row_style)
+                })
+                .collect();
+
+            let widths = vec![
+                Constraint::Length(4),   // Index
+                Constraint::Length(16),  // Score + bar
+                Constraint::Fill(1),     // Title
+                Constraint::Length(12),  // Duration: "indefinite" = 10 chars + padding
+                Constraint::Length(30),  // PR ref
             ];
-            score_spans.extend(bar_line.spans);
-            let score_line = Line::from(score_spans);
 
-            let title = pr.title.clone();
+            let header = vec!["#", "Score", "Title", "Duration", "PR"];
 
-            // Alternating row background (odd rows get subtle background)
-            let row_style = if idx % 2 == 1 {
-                Style::default().bg(theme::ROW_ALT_BG)
-            } else {
-                Style::default()
-            };
+            (rows, widths, header)
+        } else {
+            // Active view: 4 columns without Duration
+            let rows: Vec<Row> = prs
+                .iter()
+                .enumerate()
+                .map(|(idx, (pr, score_result))| {
+                    let index = format!("{}.", idx + 1);
+                    let score_str = format_score(score_result.score, score_result.incomplete);
+                    let bar_line = score_bar(score_result.score, max_score, 8);
 
-            Row::new(vec![
-                Cell::from(index).style(Style::default().fg(theme::INDEX_COLOR)),
-                Cell::from(score_line),
-                Cell::from(title),
-                Cell::from(pr.short_ref()),
-            ])
-            .style(row_style)
-        })
-        .collect();
+                    // Build score cell with colored text and bar
+                    let score_color = theme::score_color(score_result.score, max_score);
+                    let mut score_spans = vec![
+                        Span::styled(format!("{:>5} ", score_str), Style::default().fg(score_color))
+                    ];
+                    score_spans.extend(bar_line.spans);
+                    let score_line = Line::from(score_spans);
 
-    // Column widths
-    let widths = [
-        Constraint::Length(4),   // Index: "99."
-        Constraint::Length(16),  // Score + bar: "12.3k ████░░░░"
-        Constraint::Fill(1),     // Title
-        Constraint::Length(30),  // PR: "owner/repo#123"
-    ];
+                    let title = pr.title.clone();
+
+                    // Alternating row background (odd rows get subtle background)
+                    let row_style = if idx % 2 == 1 {
+                        Style::default().bg(theme::ROW_ALT_BG)
+                    } else {
+                        Style::default()
+                    };
+
+                    Row::new(vec![
+                        Cell::from(index).style(Style::default().fg(theme::INDEX_COLOR)),
+                        Cell::from(score_line),
+                        Cell::from(title),
+                        Cell::from(pr.short_ref()),
+                    ])
+                    .style(row_style)
+                })
+                .collect();
+
+            let widths = vec![
+                Constraint::Length(4),   // Index: "99."
+                Constraint::Length(16),  // Score + bar: "12.3k ████░░░░"
+                Constraint::Fill(1),     // Title
+                Constraint::Length(30),  // PR: "owner/repo#123"
+            ];
+
+            let header = vec!["#", "Score", "Title", "PR"];
+
+            (rows, widths, header)
+        };
 
     let table = Table::new(rows, widths)
         .header(
-            Row::new(vec!["#", "Score", "Title", "PR"])
+            Row::new(header_cells)
                 .style(theme::HEADER_STYLE)
                 .bottom_margin(1),
         )
