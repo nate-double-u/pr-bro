@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::Local;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Cell, Clear, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, Tabs};
 use crate::tui::app::{App, InputMode, View};
@@ -423,8 +423,8 @@ fn render_snooze_popup(frame: &mut Frame, app: &App) {
     let end_time_text = match &parse_result {
         None => "Ends: never".to_string(),
         Some(Ok(d)) => {
-            let end = Utc::now() + chrono::Duration::from_std(*d).unwrap_or_default();
-            format!("Ends: {}", end.format("%b %-d, %Y %H:%M UTC"))
+            let end = Local::now() + chrono::Duration::from_std(*d).unwrap_or_default();
+            format!("Ends: {}", end.format("%b %-d, %Y %H:%M"))
         }
         Some(Err(_)) => String::new(),
     };
