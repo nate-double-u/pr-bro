@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Label-based scoring effect.
 ///
@@ -395,7 +395,10 @@ previously_reviewed: "x0.5"
         assert_eq!(result.age, Some("+5 per 1h".to_string())); // from query
         assert_eq!(result.approvals, Some("+10 per 1".to_string())); // from global
         assert!(result.size.is_some()); // from global
-        assert_eq!(result.size.as_ref().unwrap().exclude, Some(vec!["*.lock".to_string()]));
+        assert_eq!(
+            result.size.as_ref().unwrap().exclude,
+            Some(vec!["*.lock".to_string()])
+        );
         assert_eq!(result.labels.as_ref().unwrap().len(), 1); // from global
         assert_eq!(result.previously_reviewed, Some("x0.5".to_string())); // from global
     }
@@ -682,8 +685,14 @@ previously_reviewed: "x0.5"
             approvals: None,
             size: None,
             labels: Some(vec![
-                LabelEffect { name: "foo".to_string(), effect: "+5".to_string() },
-                LabelEffect { name: "bar".to_string(), effect: "+10".to_string() },
+                LabelEffect {
+                    name: "foo".to_string(),
+                    effect: "+5".to_string(),
+                },
+                LabelEffect {
+                    name: "bar".to_string(),
+                    effect: "+10".to_string(),
+                },
             ]),
             previously_reviewed: None,
         };
@@ -693,9 +702,10 @@ previously_reviewed: "x0.5"
             age: None,
             approvals: None,
             size: None,
-            labels: Some(vec![
-                LabelEffect { name: "foo".to_string(), effect: "+20".to_string() },
-            ]),
+            labels: Some(vec![LabelEffect {
+                name: "foo".to_string(),
+                effect: "+20".to_string(),
+            }]),
             previously_reviewed: None,
         };
 

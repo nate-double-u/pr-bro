@@ -1,5 +1,5 @@
+use anyhow::{bail, Result};
 use std::time::Duration;
-use anyhow::{Result, bail};
 
 #[derive(Debug, Clone)]
 pub enum RangeOp {
@@ -8,7 +8,7 @@ pub enum RangeOp {
     GreaterThan(u64),
     GreaterEqual(u64),
     Equal(u64),
-    Between(u64, u64),  // Inclusive range: N-M
+    Between(u64, u64), // Inclusive range: N-M
 }
 
 impl RangeOp {
@@ -168,15 +168,15 @@ mod tests {
     fn test_parse_effect_add_per_unit() {
         // "+1 per 1h" on 5 hours = +5
         let effect = Effect::parse("+1 per 1h").unwrap();
-        assert_eq!(effect.apply(100.0, 5), 105.0);  // 5 units
+        assert_eq!(effect.apply(100.0, 5), 105.0); // 5 units
     }
 
     #[test]
     fn test_parse_effect_multiply_per_unit() {
         // "x1.1 per 1h" on 3 hours = x1.1^3
         let effect = Effect::parse("x1.1 per 1h").unwrap();
-        let result = effect.apply(100.0, 3);  // 3 units
-        assert!((result - 133.1).abs() < 0.1);  // 100 * 1.1^3
+        let result = effect.apply(100.0, 3); // 3 units
+        assert!((result - 133.1).abs() < 0.1); // 100 * 1.1^3
     }
 
     #[test]

@@ -1,9 +1,9 @@
 pub mod config;
-pub mod factors;
 pub mod engine;
+pub mod factors;
 pub mod validation;
 
 pub use config::*;
-pub use factors::{RangeOp, Effect};
-pub use engine::{calculate_score, ScoreResult, ScoreBreakdown, FactorContribution};
+pub use engine::{calculate_score, FactorContribution, ScoreBreakdown, ScoreResult};
+pub use factors::{Effect, RangeOp};
 pub use validation::validate_scoring;

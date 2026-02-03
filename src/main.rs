@@ -80,7 +80,9 @@ async fn main() {
         .expect("Failed to install rustls crypto provider");
 
     let cli = Cli::parse();
-    let command = cli.command.unwrap_or(Commands::List { show_snoozed: false });
+    let command = cli.command.unwrap_or(Commands::List {
+        show_snoozed: false,
+    });
     let start_time = Instant::now();
 
     // Handle --clear-cache flag (early exit before credential setup)
@@ -134,8 +136,11 @@ async fn main() {
     for (i, query) in config.queries.iter().enumerate() {
         if let Some(ref scoring) = query.scoring {
             if let Err(errors) = pr_bro::scoring::validate_scoring(scoring) {
-                eprintln!("Scoring config errors in query '{}' (index {}):",
-                    query.name.as_deref().unwrap_or("unnamed"), i);
+                eprintln!(
+                    "Scoring config errors in query '{}' (index {}):",
+                    query.name.as_deref().unwrap_or("unnamed"),
+                    i
+                );
                 for error in errors {
                     eprintln!("  - {}", error);
                 }
@@ -177,7 +182,10 @@ async fn main() {
 
     if cli.verbose {
         if pr_bro::credentials::get_token_from_env().is_some() {
-            eprintln!("Token retrieved from {} env var", pr_bro::credentials::ENV_TOKEN_VAR);
+            eprintln!(
+                "Token retrieved from {} env var",
+                pr_bro::credentials::ENV_TOKEN_VAR
+            );
         } else {
             eprintln!("Token provided via prompt");
         }
@@ -194,7 +202,11 @@ async fn main() {
         } else {
             "disabled (--no-cache)"
         };
-        eprintln!("Cache: {} ({})", status, pr_bro::github::get_cache_path().display());
+        eprintln!(
+            "Cache: {} ({})",
+            status,
+            pr_bro::github::get_cache_path().display()
+        );
     }
 
     // Create GitHub client and get cache handle
@@ -226,7 +238,14 @@ async fn main() {
     let is_interactive = std::io::stdout().is_terminal() && !cli.non_interactive;
 
     // If interactive and default list command (not explicit subcommand), launch TUI
-    if is_interactive && matches!(command, Commands::List { show_snoozed: false }) {
+    if is_interactive
+        && matches!(
+            command,
+            Commands::List {
+                show_snoozed: false
+            }
+        )
+    {
         if cli.verbose {
             eprintln!("Launching TUI mode...");
         }
@@ -367,7 +386,11 @@ async fn main() {
 
             if cli.verbose {
                 eprintln!();
-                eprintln!("Total: {} PRs in {:?}", scored_prs.len(), start_time.elapsed());
+                eprintln!(
+                    "Total: {} PRs in {:?}",
+                    scored_prs.len(),
+                    start_time.elapsed()
+                );
             }
         }
         Commands::Open { index } => {
@@ -398,25 +421,34 @@ async fn main() {
 
             println!("Opening PR #{} in browser: {}", pr.number, pr.url);
         }
-        Commands::Snooze { index, r#for: duration } => {
+        Commands::Snooze {
+            index,
+            r#for: duration,
+        } => {
             if scored_prs.is_empty() {
                 eprintln!("No pull requests found. Nothing to snooze.");
                 std::process::exit(EXIT_SUCCESS);
             }
             if index < 1 || index > scored_prs.len() {
-                eprintln!("Invalid index {}. Must be between 1 and {}.", index, scored_prs.len());
+                eprintln!(
+                    "Invalid index {}. Must be between 1 and {}.",
+                    index,
+                    scored_prs.len()
+                );
                 std::process::exit(EXIT_CONFIG);
             }
 
             let (pr, _) = &scored_prs[index - 1];
             let snooze_until = if let Some(dur_str) = duration {
-                let std_duration = humantime::parse_duration(&dur_str)
-                    .unwrap_or_else(|_| {
-                        eprintln!("Invalid duration '{}'. Use formats like: 2h, 3d, 1w", dur_str);
-                        std::process::exit(EXIT_CONFIG);
-                    });
-                let chrono_duration = chrono::Duration::from_std(std_duration)
-                    .unwrap_or_else(|_| {
+                let std_duration = humantime::parse_duration(&dur_str).unwrap_or_else(|_| {
+                    eprintln!(
+                        "Invalid duration '{}'. Use formats like: 2h, 3d, 1w",
+                        dur_str
+                    );
+                    std::process::exit(EXIT_CONFIG);
+                });
+                let chrono_duration =
+                    chrono::Duration::from_std(std_duration).unwrap_or_else(|_| {
                         eprintln!("Duration '{}' is too large.", dur_str);
                         std::process::exit(EXIT_CONFIG);
                     });
@@ -443,7 +475,11 @@ async fn main() {
                 std::process::exit(EXIT_SUCCESS);
             }
             if index < 1 || index > scored_prs.len() {
-                eprintln!("Invalid index {}. Must be between 1 and {}.", index, scored_prs.len());
+                eprintln!(
+                    "Invalid index {}. Must be between 1 and {}.",
+                    index,
+                    scored_prs.len()
+                );
                 std::process::exit(EXIT_CONFIG);
             }
 

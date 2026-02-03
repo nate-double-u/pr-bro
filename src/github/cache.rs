@@ -44,8 +44,8 @@ pub struct DiskCache {
 }
 
 struct CacheData {
-    keys: HashMap<String, CacheKey>,              // URI string -> CacheKey
-    responses: HashMap<String, CachedResponse>,   // URI string -> cached response
+    keys: HashMap<String, CacheKey>,            // URI string -> CacheKey
+    responses: HashMap<String, CachedResponse>, // URI string -> cached response
 }
 
 /// Serializable representation of a cache entry for disk storage
@@ -93,7 +93,8 @@ impl DiskCacheEntry {
         let mut headers = HeaderMap::new();
         for (name, value) in &self.headers {
             let header_name: http::HeaderName = name.parse().context("Invalid header name")?;
-            let header_value = http::HeaderValue::from_bytes(value).context("Invalid header value")?;
+            let header_value =
+                http::HeaderValue::from_bytes(value).context("Invalid header value")?;
             headers.insert(header_name, header_value);
         }
 

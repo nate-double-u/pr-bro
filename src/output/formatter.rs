@@ -1,7 +1,7 @@
-use std::io::IsTerminal;
 use chrono::Duration;
 use owo_colors::OwoColorize;
-use terminal_size::{Width, terminal_size};
+use std::io::IsTerminal;
+use terminal_size::{terminal_size, Width};
 
 use crate::github::types::PullRequest;
 
@@ -90,9 +90,7 @@ pub fn format_score(score: f64, incomplete: bool) -> String {
     };
 
     // Trim trailing .0 (e.g., "1.0k" -> "1k")
-    let trimmed = formatted
-        .replace(".0M", "M")
-        .replace(".0k", "k");
+    let trimmed = formatted.replace(".0M", "M").replace(".0k", "k");
 
     if incomplete {
         format!("{}*", trimmed)
@@ -375,7 +373,10 @@ mod tests {
 
     #[test]
     fn test_truncate_title_long() {
-        assert_eq!(truncate_title("This is a very long title", 15), "This is a ve...");
+        assert_eq!(
+            truncate_title("This is a very long title", 15),
+            "This is a ve..."
+        );
     }
 
     #[test]
@@ -479,10 +480,7 @@ mod tests {
             incomplete: false,
         }];
         let result = format_tsv(&scored_prs);
-        assert_eq!(
-            result,
-            "1501\tFix login bug\towner/repo\towner/repo#123"
-        );
+        assert_eq!(result, "1501\tFix login bug\towner/repo\towner/repo#123");
     }
 
     #[test]
@@ -493,8 +491,16 @@ mod tests {
         pr2.url = "https://github.com/owner/repo/pull/456".to_string();
 
         let scored_prs = vec![
-            ScoredPr { pr: &pr1, score: 2000.0, incomplete: false },
-            ScoredPr { pr: &pr2, score: 500.0, incomplete: true },
+            ScoredPr {
+                pr: &pr1,
+                score: 2000.0,
+                incomplete: false,
+            },
+            ScoredPr {
+                pr: &pr2,
+                score: 500.0,
+                incomplete: true,
+            },
         ];
         let result = format_tsv(&scored_prs);
         let lines: Vec<&str> = result.lines().collect();

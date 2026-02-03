@@ -70,7 +70,7 @@ impl SnoozeState {
     pub fn is_snoozed(&self, pr_url: &str) -> bool {
         if let Some(entry) = self.snoozed.get(pr_url) {
             match entry.snooze_until {
-                None => true, // Indefinite snooze
+                None => true,                      // Indefinite snooze
                 Some(until) => Utc::now() < until, // Check if not expired
             }
         } else {
@@ -98,7 +98,7 @@ impl SnoozeState {
         let now = Utc::now();
         self.snoozed.retain(|_url, entry| {
             match entry.snooze_until {
-                None => true, // Keep indefinite snoozes
+                None => true,               // Keep indefinite snoozes
                 Some(until) => now < until, // Keep if not expired
             }
         });
@@ -133,7 +133,10 @@ mod tests {
     fn test_snooze_with_future_time() {
         let mut state = SnoozeState::new();
         let future = Utc::now() + Duration::hours(1);
-        state.snooze("https://github.com/owner/repo/pull/1".to_string(), Some(future));
+        state.snooze(
+            "https://github.com/owner/repo/pull/1".to_string(),
+            Some(future),
+        );
         assert!(state.is_snoozed("https://github.com/owner/repo/pull/1"));
     }
 
@@ -141,7 +144,10 @@ mod tests {
     fn test_snooze_expired() {
         let mut state = SnoozeState::new();
         let past = Utc::now() - Duration::hours(1);
-        state.snooze("https://github.com/owner/repo/pull/1".to_string(), Some(past));
+        state.snooze(
+            "https://github.com/owner/repo/pull/1".to_string(),
+            Some(past),
+        );
         assert!(!state.is_snoozed("https://github.com/owner/repo/pull/1"));
     }
 
@@ -168,11 +174,17 @@ mod tests {
 
         // Add future snooze (should be kept)
         let future = Utc::now() + Duration::hours(1);
-        state.snooze("https://github.com/owner/repo/pull/2".to_string(), Some(future));
+        state.snooze(
+            "https://github.com/owner/repo/pull/2".to_string(),
+            Some(future),
+        );
 
         // Add expired snooze (should be removed)
         let past = Utc::now() - Duration::hours(1);
-        state.snooze("https://github.com/owner/repo/pull/3".to_string(), Some(past));
+        state.snooze(
+            "https://github.com/owner/repo/pull/3".to_string(),
+            Some(past),
+        );
 
         assert_eq!(state.snoozed.len(), 3);
 
@@ -202,7 +214,11 @@ mod tests {
         };
         let result = entry.format_remaining();
         // Should be something like "2h left" or "3h left" (timing may vary slightly)
-        assert!(result.ends_with("h left"), "Expected hours format, got: {}", result);
+        assert!(
+            result.ends_with("h left"),
+            "Expected hours format, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -223,7 +239,11 @@ mod tests {
             snooze_until: Some(future),
         };
         let result = entry.format_remaining();
-        assert!(result.ends_with("d left"), "Expected days format, got: {}", result);
+        assert!(
+            result.ends_with("d left"),
+            "Expected days format, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -234,6 +254,10 @@ mod tests {
             snooze_until: Some(future),
         };
         let result = entry.format_remaining();
-        assert!(result.ends_with("w left"), "Expected weeks format, got: {}", result);
+        assert!(
+            result.ends_with("w left"),
+            "Expected weeks format, got: {}",
+            result
+        );
     }
 }

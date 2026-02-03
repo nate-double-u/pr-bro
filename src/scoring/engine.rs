@@ -1,13 +1,13 @@
-use crate::github::types::PullRequest;
 use super::config::ScoringConfig;
 use super::factors::Effect;
+use crate::github::types::PullRequest;
 
 #[derive(Debug, Clone)]
 pub struct FactorContribution {
-    pub label: String,      // e.g. "Age", "Approvals", "Size"
+    pub label: String,       // e.g. "Age", "Approvals", "Size"
     pub description: String, // e.g. "+1 per 1h (24 units)", "matched '0' -> x0.5"
-    pub before: f64,        // Score before this factor
-    pub after: f64,         // Score after this factor
+    pub before: f64,         // Score before this factor
+    pub after: f64,          // Score after this factor
 }
 
 #[derive(Debug, Clone)]
@@ -59,7 +59,8 @@ pub fn calculate_score(pr: &PullRequest, config: &ScoringConfig) -> ScoreResult 
         // For approvals, "per N" means "per N approvals", not per time unit
         // Convert formats like "+10 per 1" or "x2 per 1" to use a dummy time unit for parsing
         // The time unit is ignored; we use approval count as units instead
-        let parseable_str = if let Some((effect_part, per_part)) = approvals_str.split_once(" per ") {
+        let parseable_str = if let Some((effect_part, per_part)) = approvals_str.split_once(" per ")
+        {
             // Check if per_part is just a number (no time unit)
             if per_part.trim().chars().all(|c| c.is_numeric() || c == '.') {
                 format!("{} per 1sec", effect_part)
@@ -109,13 +110,20 @@ pub fn calculate_score(pr: &PullRequest, config: &ScoringConfig) -> ScoreResult 
     // Apply label factors (multiple matching labels compound)
     if let Some(ref label_configs) = config.labels {
         for label_config in label_configs {
-            if pr.labels.iter().any(|l| l.eq_ignore_ascii_case(&label_config.name)) {
+            if pr
+                .labels
+                .iter()
+                .any(|l| l.eq_ignore_ascii_case(&label_config.name))
+            {
                 if let Ok(effect) = Effect::parse(&label_config.effect) {
                     let before = score;
                     score = effect.apply(score, 1);
                     factors.push(FactorContribution {
                         label: format!("Label: {}", label_config.name),
-                        description: format!("matched label '{}' -> {}", label_config.name, label_config.effect),
+                        description: format!(
+                            "matched label '{}' -> {}",
+                            label_config.name, label_config.effect
+                        ),
                         before,
                         after: score,
                     });
@@ -161,7 +169,7 @@ fn calculate_units(effect: &Effect, age: chrono::Duration) -> u64 {
             0
         }
     } else {
-        1  // Non-per-unit effects apply once
+        1 // Non-per-unit effects apply once
     }
 }
 
@@ -171,7 +179,13 @@ struct BucketResult {
     matched_effect: Option<String>,
 }
 
-fn apply_bucket_effect<T, F1, F2>(score: f64, value: u64, buckets: &[T], get_range: F1, get_effect: F2) -> BucketResult
+fn apply_bucket_effect<T, F1, F2>(
+    score: f64,
+    value: u64,
+    buckets: &[T],
+    get_range: F1,
+    get_effect: F2,
+) -> BucketResult
 where
     F1: Fn(&T) -> &str,
     F2: Fn(&T) -> &str,
@@ -203,8 +217,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{Utc, Duration as ChronoDuration};
-    use crate::scoring::{SizeBucket, SizeConfig, LabelEffect};
+    use crate::scoring::{LabelEffect, SizeBucket, SizeConfig};
+    use chrono::{Duration as ChronoDuration, Utc};
 
     fn sample_pr(age_hours: i64, approvals: u32, size: u64) -> PullRequest {
         PullRequest {
@@ -228,14 +242,17 @@ mod tests {
     #[test]
     fn test_base_score_only() {
         let pr = sample_pr(1, 0, 100);
-        let result = calculate_score(&pr, &ScoringConfig {
-            base_score: Some(100.0),
-            age: None,
-            approvals: None,
-            size: None,
-            labels: None,
-            previously_reviewed: None,
-        });
+        let result = calculate_score(
+            &pr,
+            &ScoringConfig {
+                base_score: Some(100.0),
+                age: None,
+                approvals: None,
+                size: None,
+                labels: None,
+                previously_reviewed: None,
+            },
+        );
         assert_eq!(result.score, 100.0);
         assert!(!result.incomplete);
     }
@@ -243,61 +260,74 @@ mod tests {
     #[test]
     fn test_age_factor_additive() {
         let pr = sample_pr(5, 0, 100);
-        let result = calculate_score(&pr, &ScoringConfig {
-            base_score: Some(100.0),
-            age: Some("+1 per 1h".to_string()),
-            approvals: None,
-            size: None,
-            labels: None,
-            previously_reviewed: None,
-        });
-        assert_eq!(result.score, 105.0);  // 100 + 5*1
+        let result = calculate_score(
+            &pr,
+            &ScoringConfig {
+                base_score: Some(100.0),
+                age: Some("+1 per 1h".to_string()),
+                approvals: None,
+                size: None,
+                labels: None,
+                previously_reviewed: None,
+            },
+        );
+        assert_eq!(result.score, 105.0); // 100 + 5*1
     }
 
     #[test]
     fn test_score_floors_at_zero() {
         let pr = sample_pr(1, 0, 100);
-        let result = calculate_score(&pr, &ScoringConfig {
-            base_score: Some(10.0),
-            age: Some("+-20 per 1h".to_string()),  // Would go negative
-            approvals: None,
-            size: None,
-            labels: None,
-            previously_reviewed: None,
-        });
+        let result = calculate_score(
+            &pr,
+            &ScoringConfig {
+                base_score: Some(10.0),
+                age: Some("+-20 per 1h".to_string()), // Would go negative
+                approvals: None,
+                size: None,
+                labels: None,
+                previously_reviewed: None,
+            },
+        );
         assert_eq!(result.score, 0.0);
     }
 
     #[test]
     fn test_approvals_flat_effect() {
         let pr = sample_pr(1, 0, 100);
-        let result = calculate_score(&pr, &ScoringConfig {
-            base_score: Some(100.0),
-            age: None,
-            approvals: Some("x0.5".to_string()),
-            size: None,
-            labels: None,
-            previously_reviewed: None,
-        });
+        let result = calculate_score(
+            &pr,
+            &ScoringConfig {
+                base_score: Some(100.0),
+                age: None,
+                approvals: Some("x0.5".to_string()),
+                size: None,
+                labels: None,
+                previously_reviewed: None,
+            },
+        );
         assert_eq!(result.score, 50.0);
     }
 
     #[test]
     fn test_size_bucket() {
         let pr = sample_pr(1, 0, 50);
-        let result = calculate_score(&pr, &ScoringConfig {
-            base_score: Some(100.0),
-            age: None,
-            approvals: None,
-            size: Some(SizeConfig {
-                exclude: None,
-                buckets: Some(vec![
-                    SizeBucket { range: "<100".to_string(), effect: "x2".to_string() },
-                ]),
-            }),
-            labels: None,
-            previously_reviewed: None,
-        });
+        let result = calculate_score(
+            &pr,
+            &ScoringConfig {
+                base_score: Some(100.0),
+                age: None,
+                approvals: None,
+                size: Some(SizeConfig {
+                    exclude: None,
+                    buckets: Some(vec![SizeBucket {
+                        range: "<100".to_string(),
+                        effect: "x2".to_string(),
+                    }]),
+                }),
+                labels: None,
+                previously_reviewed: None,
+            },
+        );
         assert_eq!(result.score, 200.0);
     }
 
@@ -308,13 +338,19 @@ mod tests {
 
         let config = ScoringConfig {
             base_score: Some(100.0),
-            age: Some("+1 per 1h".to_string()),  // +24 for age
-            approvals: Some("x1.5 per 1".to_string()),  // x1.5 for 1 approval
+            age: Some("+1 per 1h".to_string()), // +24 for age
+            approvals: Some("x1.5 per 1".to_string()), // x1.5 for 1 approval
             size: Some(SizeConfig {
                 exclude: None,
                 buckets: Some(vec![
-                    SizeBucket { range: "<100".to_string(), effect: "x2".to_string() },
-                    SizeBucket { range: ">=100".to_string(), effect: "x1".to_string() },
+                    SizeBucket {
+                        range: "<100".to_string(),
+                        effect: "x2".to_string(),
+                    },
+                    SizeBucket {
+                        range: ">=100".to_string(),
+                        effect: "x1".to_string(),
+                    },
                 ]),
             }),
             labels: None,
@@ -358,7 +394,7 @@ mod tests {
 
     #[test]
     fn test_bucket_first_match_wins() {
-        let pr = sample_pr(1, 0, 50);  // Size 50
+        let pr = sample_pr(1, 0, 50); // Size 50
 
         let config = ScoringConfig {
             base_score: Some(100.0),
@@ -367,8 +403,14 @@ mod tests {
             size: Some(SizeConfig {
                 exclude: None,
                 buckets: Some(vec![
-                    SizeBucket { range: "<100".to_string(), effect: "x2".to_string() },  // Matches first
-                    SizeBucket { range: "<200".to_string(), effect: "x3".to_string() },  // Also matches but not used
+                    SizeBucket {
+                        range: "<100".to_string(),
+                        effect: "x2".to_string(),
+                    }, // Matches first
+                    SizeBucket {
+                        range: "<200".to_string(),
+                        effect: "x3".to_string(),
+                    }, // Also matches but not used
                 ]),
             }),
             labels: None,
@@ -376,7 +418,7 @@ mod tests {
         };
 
         let result = calculate_score(&pr, &config);
-        assert_eq!(result.score, 200.0);  // First match (x2), not second (x3)
+        assert_eq!(result.score, 200.0); // First match (x2), not second (x3)
     }
 
     #[test]
@@ -389,9 +431,10 @@ mod tests {
             age: None,
             approvals: None,
             size: None,
-            labels: Some(vec![
-                LabelEffect { name: "urgent".to_string(), effect: "+10".to_string() }
-            ]),
+            labels: Some(vec![LabelEffect {
+                name: "urgent".to_string(),
+                effect: "+10".to_string(),
+            }]),
             previously_reviewed: None,
         };
 
@@ -409,9 +452,10 @@ mod tests {
             age: None,
             approvals: None,
             size: None,
-            labels: Some(vec![
-                LabelEffect { name: "wip".to_string(), effect: "x0.5".to_string() }
-            ]),
+            labels: Some(vec![LabelEffect {
+                name: "wip".to_string(),
+                effect: "x0.5".to_string(),
+            }]),
             previously_reviewed: None,
         };
 
@@ -422,7 +466,7 @@ mod tests {
     #[test]
     fn test_label_case_insensitive() {
         let mut pr = sample_pr(1, 0, 100);
-        pr.labels = vec!["Urgent".to_string()];  // Capital U
+        pr.labels = vec!["Urgent".to_string()]; // Capital U
 
         let config = ScoringConfig {
             base_score: Some(100.0),
@@ -430,13 +474,16 @@ mod tests {
             approvals: None,
             size: None,
             labels: Some(vec![
-                LabelEffect { name: "urgent".to_string(), effect: "+10".to_string() }  // lowercase
+                LabelEffect {
+                    name: "urgent".to_string(),
+                    effect: "+10".to_string(),
+                }, // lowercase
             ]),
             previously_reviewed: None,
         };
 
         let result = calculate_score(&pr, &config);
-        assert_eq!(result.score, 110.0);  // Should match despite case difference
+        assert_eq!(result.score, 110.0); // Should match despite case difference
     }
 
     #[test]
@@ -450,8 +497,14 @@ mod tests {
             approvals: None,
             size: None,
             labels: Some(vec![
-                LabelEffect { name: "urgent".to_string(), effect: "+10".to_string() },
-                LabelEffect { name: "critical".to_string(), effect: "x2".to_string() },
+                LabelEffect {
+                    name: "urgent".to_string(),
+                    effect: "+10".to_string(),
+                },
+                LabelEffect {
+                    name: "critical".to_string(),
+                    effect: "x2".to_string(),
+                },
             ]),
             previously_reviewed: None,
         };
@@ -471,14 +524,15 @@ mod tests {
             age: None,
             approvals: None,
             size: None,
-            labels: Some(vec![
-                LabelEffect { name: "urgent".to_string(), effect: "+10".to_string() }
-            ]),
+            labels: Some(vec![LabelEffect {
+                name: "urgent".to_string(),
+                effect: "+10".to_string(),
+            }]),
             previously_reviewed: None,
         };
 
         let result = calculate_score(&pr, &config);
-        assert_eq!(result.score, 100.0);  // No label match, no effect
+        assert_eq!(result.score, 100.0); // No label match, no effect
     }
 
     #[test]
@@ -514,13 +568,13 @@ mod tests {
         };
 
         let result = calculate_score(&pr, &config);
-        assert_eq!(result.score, 100.0);  // Not reviewed, effect not applied
+        assert_eq!(result.score, 100.0); // Not reviewed, effect not applied
     }
 
     #[test]
     fn test_size_uses_filtered_size() {
-        let mut pr = sample_pr(1, 0, 1000);  // additions=500, deletions=500, total=1000
-        pr.filtered_size = Some(50);  // After exclusion, only 50 lines
+        let mut pr = sample_pr(1, 0, 1000); // additions=500, deletions=500, total=1000
+        pr.filtered_size = Some(50); // After exclusion, only 50 lines
 
         let config = ScoringConfig {
             base_score: Some(100.0),
@@ -529,8 +583,14 @@ mod tests {
             size: Some(SizeConfig {
                 exclude: None,
                 buckets: Some(vec![
-                    SizeBucket { range: "<100".to_string(), effect: "x5".to_string() },
-                    SizeBucket { range: ">=100".to_string(), effect: "x1".to_string() },
+                    SizeBucket {
+                        range: "<100".to_string(),
+                        effect: "x5".to_string(),
+                    },
+                    SizeBucket {
+                        range: ">=100".to_string(),
+                        effect: "x1".to_string(),
+                    },
                 ]),
             }),
             labels: None,
@@ -544,7 +604,7 @@ mod tests {
 
     #[test]
     fn test_full_scoring_with_all_factors() {
-        let mut pr = sample_pr(5, 2, 50);  // 5h old, 2 approvals, 50 lines
+        let mut pr = sample_pr(5, 2, 50); // 5h old, 2 approvals, 50 lines
         pr.labels = vec!["urgent".to_string()];
         pr.user_has_reviewed = false;
 
@@ -554,13 +614,15 @@ mod tests {
             approvals: Some("+10 per 1".to_string()),
             size: Some(SizeConfig {
                 exclude: None,
-                buckets: Some(vec![
-                    SizeBucket { range: "<100".to_string(), effect: "x2".to_string() },
-                ]),
+                buckets: Some(vec![SizeBucket {
+                    range: "<100".to_string(),
+                    effect: "x2".to_string(),
+                }]),
             }),
-            labels: Some(vec![
-                LabelEffect { name: "urgent".to_string(), effect: "+20".to_string() }
-            ]),
+            labels: Some(vec![LabelEffect {
+                name: "urgent".to_string(),
+                effect: "+20".to_string(),
+            }]),
             previously_reviewed: Some("x0.5".to_string()),
         };
 

@@ -41,10 +41,10 @@ pub async fn search_prs(client: &Octocrab, query: &str) -> Result<Vec<PullReques
                             url: issue.html_url.to_string(),
                             created_at: issue.created_at,
                             updated_at: issue.updated_at,
-                            additions: 0,  // Search API doesn't include these
-                            deletions: 0,  // Will be populated by enrichment
-                            approvals: 0,  // Requires separate API call
-                            draft: false,  // Search API doesn't expose draft status reliably
+                            additions: 0, // Search API doesn't include these
+                            deletions: 0, // Will be populated by enrichment
+                            approvals: 0, // Requires separate API call
+                            draft: false, // Search API doesn't expose draft status reliably
                             labels: issue.labels.iter().map(|l| l.name.clone()).collect(),
                             user_has_reviewed: false, // Will be populated by enrichment
                             filtered_size: None, // Will be set by enrich_pr if exclude patterns configured
@@ -59,23 +59,34 @@ pub async fn search_prs(client: &Octocrab, query: &str) -> Result<Vec<PullReques
                 // Auth errors: fail immediately with typed AuthError (no retry)
                 if error_str.contains("401") || error_str.contains("Bad credentials") {
                     return Err(crate::fetch::AuthError {
-                        message: "Authentication failed. Your GitHub token may be invalid or expired.".to_string(),
-                    }.into());
+                        message:
+                            "Authentication failed. Your GitHub token may be invalid or expired."
+                                .to_string(),
+                    }
+                    .into());
                 }
 
                 // Rate limit: fail immediately (caller handles differently)
                 if error_str.contains("rate limit") || error_str.contains("403") {
-                    return Err(anyhow!("GitHub API rate limit exceeded. Wait a few minutes and try again."));
+                    return Err(anyhow!(
+                        "GitHub API rate limit exceeded. Wait a few minutes and try again."
+                    ));
                 }
 
                 // Permission errors: fail immediately
-                if error_str.contains("do not have permission") || error_str.contains("resources do not exist") {
+                if error_str.contains("do not have permission")
+                    || error_str.contains("resources do not exist")
+                {
                     return Err(anyhow!("Repository not found or no access. Check repo name and token permissions (needs 'repo' scope for private repos)."));
                 }
 
                 // Transient errors: retry with backoff
                 if attempt >= max_retries {
-                    return Err(anyhow!("GitHub API error after {} attempts: {}", max_retries, e));
+                    return Err(anyhow!(
+                        "GitHub API error after {} attempts: {}",
+                        max_retries,
+                        e
+                    ));
                 }
 
                 let delay = std::time::Duration::from_millis(100 * (1 << (attempt - 1))); // 100ms, 200ms, 400ms
@@ -123,14 +134,19 @@ async fn fetch_pr_reviews(
         .items
         .iter()
         .filter(|review| {
-            matches!(review.state, Some(octocrab::models::pulls::ReviewState::Approved))
+            matches!(
+                review.state,
+                Some(octocrab::models::pulls::ReviewState::Approved)
+            )
         })
         .count() as u32;
 
     // Check if authenticated user has reviewed (any review state counts)
     let user_has_reviewed = auth_username.is_some_and(|username| {
         reviews.items.iter().any(|r| {
-            r.user.as_ref().is_some_and(|u| u.login.eq_ignore_ascii_case(username))
+            r.user
+                .as_ref()
+                .is_some_and(|u| u.login.eq_ignore_ascii_case(username))
         })
     });
 
@@ -163,10 +179,7 @@ async fn fetch_pr_file_list(
 }
 
 /// Filter files by basename glob matching and compute total size of non-excluded files.
-fn apply_size_exclusions(
-    files: &[(String, u64, u64)],
-    exclude_patterns: &[String],
-) -> Result<u64> {
+fn apply_size_exclusions(files: &[(String, u64, u64)], exclude_patterns: &[String]) -> Result<u64> {
     let compiled: Vec<glob::Pattern> = exclude_patterns
         .iter()
         .map(|p| glob::Pattern::new(p).context(format!("Invalid glob pattern: {}", p)))
@@ -221,13 +234,19 @@ async fn enrich_pr(
                             match apply_size_exclusions(&files, patterns) {
                                 Ok(filtered) => pr.filtered_size = Some(filtered),
                                 Err(e) => {
-                                    eprintln!("Warning: Failed to apply size exclusions for PR {}: {}", pr.number, e);
+                                    eprintln!(
+                                        "Warning: Failed to apply size exclusions for PR {}: {}",
+                                        pr.number, e
+                                    );
                                     // Leave filtered_size as None — fallback to aggregate size
                                 }
                             }
                         }
                         Err(e) => {
-                            eprintln!("Warning: Failed to fetch file list for PR {}: {}", pr.number, e);
+                            eprintln!(
+                                "Warning: Failed to fetch file list for PR {}: {}",
+                                pr.number, e
+                            );
                             // Leave filtered_size as None — fallback to aggregate size
                         }
                     }
@@ -256,7 +275,14 @@ async fn enrich_pr_with_rate_limit_check(
         return pr; // Skip enrichment if rate limited
     }
 
-    match enrich_pr(&client, &mut pr, auth_username.as_deref(), &exclude_patterns).await {
+    match enrich_pr(
+        &client,
+        &mut pr,
+        auth_username.as_deref(),
+        &exclude_patterns,
+    )
+    .await
+    {
         Ok(_) => {}
         Err(e) => {
             let err_str = e.to_string();

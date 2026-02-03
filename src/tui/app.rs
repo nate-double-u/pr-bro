@@ -194,7 +194,9 @@ impl App {
 
     pub fn selected_pr(&self) -> Option<&PullRequest> {
         let prs = self.current_prs();
-        self.table_state.selected().and_then(|i| prs.get(i).map(|(pr, _)| pr))
+        self.table_state
+            .selected()
+            .and_then(|i| prs.get(i).map(|(pr, _)| pr))
     }
 
     pub fn push_undo(&mut self, action: UndoAction) {
@@ -255,7 +257,8 @@ impl App {
             // Parse duration string
             match humantime::parse_duration(&self.snooze_input) {
                 Ok(duration) => {
-                    let until = Utc::now() + chrono::Duration::from_std(duration).unwrap_or_default();
+                    let until =
+                        Utc::now() + chrono::Duration::from_std(duration).unwrap_or_default();
                     Some(until)
                 }
                 Err(_) => {
@@ -334,7 +337,8 @@ impl App {
                 let url = pr.url.clone();
                 let title = pr.title.clone();
                 // Look up snooze entry to get the until time for undo
-                let until = self.snooze_state
+                let until = self
+                    .snooze_state
                     .snoozed_entries()
                     .get(&url)
                     .and_then(|entry| entry.snooze_until);
@@ -382,7 +386,9 @@ impl App {
                 self.snooze_state.unsnooze(&url);
 
                 // Save to disk
-                if let Err(e) = crate::snooze::save_snooze_state(&self.snooze_path, &self.snooze_state) {
+                if let Err(e) =
+                    crate::snooze::save_snooze_state(&self.snooze_path, &self.snooze_state)
+                {
                     self.show_flash(format!("Failed to save snooze state: {}", e));
                     return;
                 }
@@ -397,7 +403,9 @@ impl App {
                 self.snooze_state.snooze(url.clone(), until);
 
                 // Save to disk
-                if let Err(e) = crate::snooze::save_snooze_state(&self.snooze_path, &self.snooze_state) {
+                if let Err(e) =
+                    crate::snooze::save_snooze_state(&self.snooze_path, &self.snooze_state)
+                {
                     self.show_flash(format!("Failed to save snooze state: {}", e));
                     return;
                 }
@@ -407,12 +415,18 @@ impl App {
 
                 self.show_flash(format!("Undid unsnooze: {}", title));
             }
-            UndoAction::Resnooze { url, title, previous_until } => {
+            UndoAction::Resnooze {
+                url,
+                title,
+                previous_until,
+            } => {
                 // Undo a re-snooze: restore the previous snooze duration
                 self.snooze_state.snooze(url.clone(), previous_until);
 
                 // Save to disk
-                if let Err(e) = crate::snooze::save_snooze_state(&self.snooze_path, &self.snooze_state) {
+                if let Err(e) =
+                    crate::snooze::save_snooze_state(&self.snooze_path, &self.snooze_state)
+                {
                     self.show_flash(format!("Failed to save snooze state: {}", e));
                     return;
                 }
@@ -499,7 +513,9 @@ impl App {
     /// Get the selected PR's ScoreResult
     pub fn selected_score_result(&self) -> Option<&crate::scoring::ScoreResult> {
         let prs = self.current_prs();
-        self.table_state.selected().and_then(|i| prs.get(i).map(|(_, sr)| sr))
+        self.table_state
+            .selected()
+            .and_then(|i| prs.get(i).map(|(_, sr)| sr))
     }
 
     /// Update PRs with fresh data from fetch
@@ -541,7 +557,10 @@ impl App {
         // Show flash message
         let active_count = self.active_prs.len();
         let snoozed_count = self.snoozed_prs.len();
-        self.show_flash(format!("Refreshed ({} active, {} snoozed)", active_count, snoozed_count));
+        self.show_flash(format!(
+            "Refreshed ({} active, {} snoozed)",
+            active_count, snoozed_count
+        ));
     }
 
     /// Advance the loading spinner animation frame

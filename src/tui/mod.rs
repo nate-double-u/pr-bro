@@ -8,10 +8,7 @@ pub use app::App;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use event::{Event, EventHandler};
 
-pub async fn run_tui(
-    mut app: App,
-    mut client: octocrab::Octocrab,
-) -> anyhow::Result<()> {
+pub async fn run_tui(mut app: App, mut client: octocrab::Octocrab) -> anyhow::Result<()> {
     // Init terminal (sets up panic hooks automatically)
     let mut terminal = ratatui::init();
 
@@ -29,8 +26,14 @@ pub async fn run_tui(
 
     let mut pending_fetch: Option<tokio::task::JoinHandle<_>> = Some(tokio::spawn(async move {
         crate::fetch::fetch_and_score_prs(
-            &client_clone, &config_clone, &snooze_clone, &cache_config_clone, verbose, auth_username_clone.as_deref()
-        ).await
+            &client_clone,
+            &config_clone,
+            &snooze_clone,
+            &cache_config_clone,
+            verbose,
+            auth_username_clone.as_deref(),
+        )
+        .await
     }));
     app.is_loading = true;
 
@@ -78,7 +81,12 @@ pub async fn run_tui(
                                             }
 
                                             // Re-fetch authenticated username
-                                            let new_username = new_client.current().user().await.ok().map(|u| u.login);
+                                            let new_username = new_client
+                                                .current()
+                                                .user()
+                                                .await
+                                                .ok()
+                                                .map(|u| u.login);
                                             app.auth_username = new_username;
 
                                             // Re-init terminal
@@ -138,8 +146,14 @@ pub async fn run_tui(
 
             pending_fetch = Some(tokio::spawn(async move {
                 crate::fetch::fetch_and_score_prs(
-                    &client_clone, &config_clone, &snooze_clone, &cache_config_clone, verbose, auth_username_clone.as_deref()
-                ).await
+                    &client_clone,
+                    &config_clone,
+                    &snooze_clone,
+                    &cache_config_clone,
+                    verbose,
+                    auth_username_clone.as_deref(),
+                )
+                .await
             }));
             app.is_loading = true;
         }
@@ -230,14 +244,12 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
                 _ => {}
             }
         }
-        app::InputMode::ScoreBreakdown => {
-            match key.code {
-                KeyCode::Esc | KeyCode::Char('d') => app.dismiss_score_breakdown(),
-                KeyCode::Char('j') | KeyCode::Down => app.next_row(),
-                KeyCode::Char('k') | KeyCode::Up => app.previous_row(),
-                _ => {}
-            }
-        }
+        app::InputMode::ScoreBreakdown => match key.code {
+            KeyCode::Esc | KeyCode::Char('d') => app.dismiss_score_breakdown(),
+            KeyCode::Char('j') | KeyCode::Down => app.next_row(),
+            KeyCode::Char('k') | KeyCode::Up => app.previous_row(),
+            _ => {}
+        },
         app::InputMode::Help => {
             // Any key exits help
             app.dismiss_help();

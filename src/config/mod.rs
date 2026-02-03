@@ -21,8 +21,12 @@ pub fn get_config_path() -> PathBuf {
 pub fn ensure_config_dir() -> Result<()> {
     let config_dir = get_config_dir();
     if !config_dir.exists() {
-        fs::create_dir_all(&config_dir)
-            .with_context(|| format!("Failed to create config directory at {}", config_dir.display()))?;
+        fs::create_dir_all(&config_dir).with_context(|| {
+            format!(
+                "Failed to create config directory at {}",
+                config_dir.display()
+            )
+        })?;
     }
     Ok(())
 }
@@ -53,11 +57,7 @@ pub fn load_config(path: Option<PathBuf>) -> Result<Config> {
         .with_context(|| format!("Failed to read config file at {}", config_path.display()))?;
 
     let config: Config = serde_saphyr::from_str(&config_content)
-        .map_err(|e| anyhow::anyhow!(
-            "Failed to parse config {}: {}",
-            config_path.display(),
-            e
-        ))?;
+        .map_err(|e| anyhow::anyhow!("Failed to parse config {}: {}", config_path.display(), e))?;
 
     Ok(config)
 }

@@ -71,7 +71,10 @@ mod tests {
     fn test_filter_active_keeps_expired() {
         let mut state = SnoozeState::new();
         let past = Utc::now() - Duration::hours(1);
-        state.snooze("https://github.com/owner/repo/pull/1".to_string(), Some(past));
+        state.snooze(
+            "https://github.com/owner/repo/pull/1".to_string(),
+            Some(past),
+        );
 
         let prs = vec![
             create_test_pr(1, "https://github.com/owner/repo/pull/1"),
@@ -88,7 +91,10 @@ mod tests {
         state.snooze("https://github.com/owner/repo/pull/1".to_string(), None);
 
         let future = Utc::now() + Duration::hours(1);
-        state.snooze("https://github.com/owner/repo/pull/3".to_string(), Some(future));
+        state.snooze(
+            "https://github.com/owner/repo/pull/3".to_string(),
+            Some(future),
+        );
 
         let prs = vec![
             create_test_pr(1, "https://github.com/owner/repo/pull/1"),

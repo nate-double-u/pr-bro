@@ -1,11 +1,11 @@
-use anyhow::Result;
 use crate::config::Config;
 use crate::github::cache::CacheConfig;
 use crate::github::types::PullRequest;
-use crate::scoring::{ScoreResult, calculate_score, merge_scoring_configs};
-use crate::snooze::{SnoozeState, filter_active_prs, filter_snoozed_prs};
+use crate::scoring::{calculate_score, merge_scoring_configs, ScoreResult};
+use crate::snooze::{filter_active_prs, filter_snoozed_prs, SnoozeState};
+use anyhow::Result;
 use futures::stream::{FuturesUnordered, StreamExt};
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 /// Typed error for GitHub authentication failures (401 / Bad credentials).
@@ -36,7 +36,11 @@ pub async fn fetch_and_score_prs(
     cache_config: &CacheConfig,
     verbose: bool,
     auth_username: Option<&str>,
-) -> Result<(Vec<(PullRequest, ScoreResult)>, Vec<(PullRequest, ScoreResult)>, Option<u64>)> {
+) -> Result<(
+    Vec<(PullRequest, ScoreResult)>,
+    Vec<(PullRequest, ScoreResult)>,
+    Option<u64>,
+)> {
     if verbose {
         let cache_status = if cache_config.enabled {
             "enabled"
@@ -61,13 +65,16 @@ pub async fn fetch_and_score_prs(
         let query_name = query_config.name.clone();
         let auth_username_clone = auth_username_owned.clone();
         // Merge scoring config for this query to get the effective exclude patterns
-        let merged_scoring = merge_scoring_configs(
-            &global_scoring,
-            query_config.scoring.as_ref(),
-        );
+        let merged_scoring = merge_scoring_configs(&global_scoring, query_config.scoring.as_ref());
         let exclude_patterns = merged_scoring.size.and_then(|s| s.exclude);
         futures.push(async move {
-            let result = crate::github::search_and_enrich_prs(&client, &query, auth_username_clone.as_deref(), exclude_patterns).await;
+            let result = crate::github::search_and_enrich_prs(
+                &client,
+                &query,
+                auth_username_clone.as_deref(),
+                exclude_patterns,
+            )
+            .await;
             (query_name, query, query_index, result)
         });
     }
@@ -76,8 +83,11 @@ pub async fn fetch_and_score_prs(
         match result {
             Ok(prs) => {
                 if verbose {
-                    eprintln!("  Found {} PRs for {}", prs.len(),
-                        name.as_deref().unwrap_or(&query));
+                    eprintln!(
+                        "  Found {} PRs for {}",
+                        prs.len(),
+                        name.as_deref().unwrap_or(&query)
+                    );
                 }
                 // Extend with (pr, query_index) pairs to track which query each PR came from
                 all_prs.extend(prs.into_iter().map(|pr| (pr, query_index)));
@@ -88,8 +98,11 @@ pub async fn fetch_and_score_prs(
                 if e.downcast_ref::<AuthError>().is_some() {
                     return Err(e);
                 }
-                eprintln!("Query failed: {} - {}",
-                    name.as_deref().unwrap_or(&query), e);
+                eprintln!(
+                    "Query failed: {} - {}",
+                    name.as_deref().unwrap_or(&query),
+                    e
+                );
             }
         }
     }
@@ -124,7 +137,11 @@ pub async fn fetch_and_score_prs(
     let snoozed_prs = filter_snoozed_prs(unique_prs, snooze_state);
 
     if verbose {
-        eprintln!("After filter: {} active, {} snoozed", active_prs.len(), snoozed_prs.len());
+        eprintln!(
+            "After filter: {} active, {} snoozed",
+            active_prs.len(),
+            snoozed_prs.len()
+        );
     }
 
     // Score active PRs (merge per-query scoring config with global for each PR)
@@ -133,10 +150,8 @@ pub async fn fetch_and_score_prs(
         .map(|pr| {
             // Look up which query this PR came from and merge its scoring config
             let query_idx = pr_to_query_index.get(&pr.url).copied().unwrap_or(0);
-            let scoring = merge_scoring_configs(
-                &global_scoring,
-                config.queries[query_idx].scoring.as_ref(),
-            );
+            let scoring =
+                merge_scoring_configs(&global_scoring, config.queries[query_idx].scoring.as_ref());
             let result = calculate_score(&pr, &scoring);
             (pr, result)
         })
@@ -148,10 +163,8 @@ pub async fn fetch_and_score_prs(
         .map(|pr| {
             // Look up which query this PR came from and merge its scoring config
             let query_idx = pr_to_query_index.get(&pr.url).copied().unwrap_or(0);
-            let scoring = merge_scoring_configs(
-                &global_scoring,
-                config.queries[query_idx].scoring.as_ref(),
-            );
+            let scoring =
+                merge_scoring_configs(&global_scoring, config.queries[query_idx].scoring.as_ref());
             let result = calculate_score(&pr, &scoring);
             (pr, result)
         })
@@ -160,7 +173,10 @@ pub async fn fetch_and_score_prs(
     // Sort both lists by score descending, then by age ascending (older first for ties)
     let sort_fn = |a: &(PullRequest, ScoreResult), b: &(PullRequest, ScoreResult)| {
         // Primary: score descending
-        let score_cmp = b.1.score.partial_cmp(&a.1.score).unwrap_or(std::cmp::Ordering::Equal);
+        let score_cmp =
+            b.1.score
+                .partial_cmp(&a.1.score)
+                .unwrap_or(std::cmp::Ordering::Equal);
         if score_cmp != std::cmp::Ordering::Equal {
             return score_cmp;
         }

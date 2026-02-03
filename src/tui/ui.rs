@@ -1,26 +1,28 @@
-use chrono::{Datelike, Local};
-use ratatui::prelude::*;
-use ratatui::widgets::{Block, Cell, Clear, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, Tabs};
 use crate::tui::app::{App, InputMode, View};
 use crate::tui::theme;
+use chrono::{Datelike, Local};
+use ratatui::prelude::*;
+use ratatui::widgets::{
+    Block, Cell, Clear, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table,
+    Tabs,
+};
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
 
     // Handle very small terminal sizes gracefully
     if area.height < 6 || area.width < 30 {
-        let msg = Paragraph::new("Terminal too small")
-            .alignment(Alignment::Center);
+        let msg = Paragraph::new("Terminal too small").alignment(Alignment::Center);
         frame.render_widget(msg, area);
         return;
     }
 
     // Layout: Title(1) + Tabs(1) + Table(fill) + Status(1)
     let chunks = Layout::vertical([
-        Constraint::Length(1),  // Title bar
-        Constraint::Length(1),  // Tab bar
-        Constraint::Fill(1),    // PR table
-        Constraint::Length(1),  // Status bar
+        Constraint::Length(1), // Title bar
+        Constraint::Length(1), // Tab bar
+        Constraint::Fill(1),   // PR table
+        Constraint::Length(1), // Status bar
     ])
     .split(area);
 
@@ -45,7 +47,10 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 
 fn render_title(frame: &mut Frame, area: Rect, app: &App) {
     // Build title with rate limit on the right
-    let mut spans = vec![Span::styled("PR Bro", Style::default().fg(theme::TITLE_COLOR).bold())];
+    let mut spans = vec![Span::styled(
+        "PR Bro",
+        Style::default().fg(theme::TITLE_COLOR).bold(),
+    )];
 
     // Add rate limit info on the right if available
     if let Some(remaining) = app.rate_limit_remaining {
@@ -56,7 +61,10 @@ fn render_title(frame: &mut Frame, area: Rect, app: &App) {
 
         // Add padding and rate limit text
         spans.push(Span::raw(" ".repeat(padding_len)));
-        spans.push(Span::styled(rate_limit_text, Style::default().fg(theme::MUTED)));
+        spans.push(Span::styled(
+            rate_limit_text,
+            Style::default().fg(theme::MUTED),
+        ));
     }
 
     let title = Line::from(spans);
@@ -92,7 +100,8 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
     }
 
     // Calculate max score for bar scaling
-    let max_score = prs.iter()
+    let max_score = prs
+        .iter()
         .map(|(_, result)| result.score)
         .fold(0.0_f64, f64::max);
 
@@ -114,16 +123,18 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
 
                     // Build score cell with colored text and bar
                     let score_color = theme::score_color(score_result.score, max_score);
-                    let mut score_spans = vec![
-                        Span::styled(format!("{:>5} ", score_str), Style::default().fg(score_color))
-                    ];
+                    let mut score_spans = vec![Span::styled(
+                        format!("{:>5} ", score_str),
+                        Style::default().fg(score_color),
+                    )];
                     score_spans.extend(bar_line.spans);
                     let score_line = Line::from(score_spans);
 
                     let title = pr.title.clone();
 
                     // Get duration from snooze entry
-                    let duration = app.snooze_state
+                    let duration = app
+                        .snooze_state
                         .snoozed_entries()
                         .get(&pr.url)
                         .map(|entry| entry.format_remaining())
@@ -148,11 +159,11 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
                 .collect();
 
             let widths = vec![
-                Constraint::Length(4),   // Index
-                Constraint::Length(16),  // Score + bar
-                Constraint::Fill(1),     // Title
-                Constraint::Length(12),  // Duration: "indefinite" = 10 chars + padding
-                Constraint::Length(40),  // PR ref
+                Constraint::Length(4),  // Index
+                Constraint::Length(16), // Score + bar
+                Constraint::Fill(1),    // Title
+                Constraint::Length(12), // Duration: "indefinite" = 10 chars + padding
+                Constraint::Length(40), // PR ref
             ];
 
             let header = vec!["#", "Score", "Title", "Duration", "PR"];
@@ -170,9 +181,10 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
 
                     // Build score cell with colored text and bar
                     let score_color = theme::score_color(score_result.score, max_score);
-                    let mut score_spans = vec![
-                        Span::styled(format!("{:>5} ", score_str), Style::default().fg(score_color))
-                    ];
+                    let mut score_spans = vec![Span::styled(
+                        format!("{:>5} ", score_str),
+                        Style::default().fg(score_color),
+                    )];
                     score_spans.extend(bar_line.spans);
                     let score_line = Line::from(score_spans);
 
@@ -196,10 +208,10 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
                 .collect();
 
             let widths = vec![
-                Constraint::Length(4),   // Index: "99."
-                Constraint::Length(16),  // Score + bar: "12.3k ████░░░░"
-                Constraint::Fill(1),     // Title
-                Constraint::Length(40),  // PR: "owner/repo-name#12345"
+                Constraint::Length(4),  // Index: "99."
+                Constraint::Length(16), // Score + bar: "12.3k ████░░░░"
+                Constraint::Fill(1),    // Title
+                Constraint::Length(40), // PR: "owner/repo-name#12345"
             ];
 
             let header = vec!["#", "Score", "Title", "PR"];
@@ -218,14 +230,13 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
     frame.render_stateful_widget(table, area, &mut app.table_state);
 
     // Render scrollbar if PR list exceeds visible area
-    let visible_rows = area.height.saturating_sub(2) as usize;  // Subtract header and margin
+    let visible_rows = area.height.saturating_sub(2) as usize; // Subtract header and margin
     if pr_count > visible_rows {
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
             .thumb_style(Style::default().fg(theme::SCROLLBAR_THUMB))
             .track_style(Style::default().fg(theme::SCROLLBAR_TRACK));
 
-        let mut scrollbar_state = ScrollbarState::new(pr_count)
-            .position(selected_pos);
+        let mut scrollbar_state = ScrollbarState::new(pr_count).position(selected_pos);
 
         frame.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
     }
@@ -234,15 +245,20 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
 fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
     let text = if let Some((ref msg, _)) = app.flash_message {
         // Show flash message with color based on message type
-        let msg_color = if msg.starts_with("Failed") || msg.starts_with("Error") || msg.contains("cancelled") {
-            theme::FLASH_ERROR
-        } else if msg.starts_with("Snoozed:") || msg.starts_with("Unsnoozed:") ||
-                  msg.starts_with("Re-snoozed:") || msg.starts_with("Undid") ||
-                  msg.starts_with("Refreshed") || msg.starts_with("Opened:") {
-            theme::FLASH_SUCCESS
-        } else {
-            Color::White  // Default for unknown message types
-        };
+        let msg_color =
+            if msg.starts_with("Failed") || msg.starts_with("Error") || msg.contains("cancelled") {
+                theme::FLASH_ERROR
+            } else if msg.starts_with("Snoozed:")
+                || msg.starts_with("Unsnoozed:")
+                || msg.starts_with("Re-snoozed:")
+                || msg.starts_with("Undid")
+                || msg.starts_with("Refreshed")
+                || msg.starts_with("Opened:")
+            {
+                theme::FLASH_SUCCESS
+            } else {
+                Color::White // Default for unknown message types
+            };
         Line::from(Span::styled(msg.clone(), Style::default().fg(msg_color)))
     } else {
         // Show normal status
@@ -291,10 +307,16 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
             if i > 0 {
                 hint_spans.push(Span::raw(" "));
             }
-            hint_spans.push(Span::styled(*key1, Style::default().fg(theme::STATUS_KEY_COLOR)));
+            hint_spans.push(Span::styled(
+                *key1,
+                Style::default().fg(theme::STATUS_KEY_COLOR),
+            ));
             if !sep.is_empty() {
                 hint_spans.push(Span::raw(*sep));
-                hint_spans.push(Span::styled(*key2, Style::default().fg(theme::STATUS_KEY_COLOR)));
+                hint_spans.push(Span::styled(
+                    *key2,
+                    Style::default().fg(theme::STATUS_KEY_COLOR),
+                ));
             }
             hint_spans.push(Span::raw(*label));
         }
@@ -313,7 +335,7 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
 
     frame.render_widget(
         Paragraph::new(text).style(Style::default().bg(theme::STATUS_BAR_BG)),
-        area
+        area,
     );
 }
 
@@ -327,9 +349,7 @@ fn format_score(score: f64, incomplete: bool) -> String {
     };
 
     // Trim trailing .0
-    let trimmed = formatted
-        .replace(".0M", "M")
-        .replace(".0k", "k");
+    let trimmed = formatted.replace(".0M", "M").replace(".0k", "k");
 
     if incomplete {
         format!("{}*", trimmed)
@@ -352,10 +372,16 @@ fn score_bar(score: f64, max_score: f64, width: usize) -> Line<'static> {
 
     let mut spans = Vec::new();
     if filled > 0 {
-        spans.push(Span::styled("█".repeat(filled), Style::default().fg(bar_color)));
+        spans.push(Span::styled(
+            "█".repeat(filled),
+            Style::default().fg(bar_color),
+        ));
     }
     if empty > 0 {
-        spans.push(Span::styled("░".repeat(empty), Style::default().fg(theme::BAR_EMPTY)));
+        spans.push(Span::styled(
+            "░".repeat(empty),
+            Style::default().fg(theme::BAR_EMPTY),
+        ));
     }
 
     Line::from(spans)
@@ -381,10 +407,10 @@ fn render_snooze_popup(frame: &mut Frame, app: &App) {
 
     // Split inner area for input, duration preview, end time, and help text
     let chunks = Layout::vertical([
-        Constraint::Length(1),  // Input line
-        Constraint::Length(1),  // Duration preview
-        Constraint::Length(1),  // End time preview
-        Constraint::Length(1),  // Help text (Enter/Esc)
+        Constraint::Length(1), // Input line
+        Constraint::Length(1), // Duration preview
+        Constraint::Length(1), // End time preview
+        Constraint::Length(1), // Help text (Enter/Esc)
     ])
     .split(inner);
 
@@ -449,13 +475,12 @@ fn render_snooze_popup(frame: &mut Frame, app: &App) {
         }
         Some(Err(_)) => String::new(),
     };
-    let end_time = Paragraph::new(end_time_text)
-        .style(Style::default().fg(theme::MUTED));
+    let end_time = Paragraph::new(end_time_text).style(Style::default().fg(theme::MUTED));
     frame.render_widget(end_time, chunks[2]);
 
     // Render help text
-    let help = Paragraph::new("Enter: confirm | Esc: cancel")
-        .style(Style::default().fg(theme::MUTED));
+    let help =
+        Paragraph::new("Enter: confirm | Esc: cancel").style(Style::default().fg(theme::MUTED));
     frame.render_widget(help, chunks[3]);
 }
 
@@ -542,9 +567,10 @@ fn render_help_popup(frame: &mut Frame) {
             Span::raw("Quit"),
         ]),
         Line::from(""),
-        Line::from(
-            Span::styled("Press any key to close", Style::default().fg(theme::MUTED))
-        ),
+        Line::from(Span::styled(
+            "Press any key to close",
+            Style::default().fg(theme::MUTED),
+        )),
     ];
 
     let help_text = Paragraph::new(help_lines);
@@ -695,7 +721,8 @@ fn render_score_breakdown_popup(frame: &mut Frame, app: &App) {
     lines.push(Line::from(""));
 
     // Line N-1: Final score with color
-    let max_score = app.current_prs()
+    let max_score = app
+        .current_prs()
         .iter()
         .map(|(_, sr)| sr.score)
         .fold(0.0_f64, f64::max);

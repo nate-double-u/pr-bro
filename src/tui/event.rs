@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 pub enum Event {
     Key(KeyEvent),
     Tick,
-    Refresh,  // Auto-refresh timer fired
+    Refresh, // Auto-refresh timer fired
 }
 
 pub struct EventHandler {
@@ -19,12 +19,10 @@ impl EventHandler {
 
         tokio::spawn(async move {
             let mut reader = crossterm::event::EventStream::new();
-            let mut tick_interval = tokio::time::interval(
-                std::time::Duration::from_millis(tick_rate_ms)
-            );
-            let mut refresh_interval = tokio::time::interval(
-                std::time::Duration::from_secs(refresh_interval_secs)
-            );
+            let mut tick_interval =
+                tokio::time::interval(std::time::Duration::from_millis(tick_rate_ms));
+            let mut refresh_interval =
+                tokio::time::interval(std::time::Duration::from_secs(refresh_interval_secs));
 
             // Skip the first tick of refresh interval (it fires immediately)
             refresh_interval.tick().await;

@@ -21,8 +21,8 @@ pub fn load_snooze_state(path: &Path) -> Result<SnoozeState> {
     let file = File::open(path)
         .with_context(|| format!("Failed to open snooze state file at {}", path.display()))?;
 
-    let state: SnoozeState = serde_json::from_reader(file)
-        .context("Failed to load snooze state")?;
+    let state: SnoozeState =
+        serde_json::from_reader(file).context("Failed to load snooze state")?;
 
     // Version check
     if state.version != 1 {
@@ -45,12 +45,10 @@ pub fn save_snooze_state(path: &Path, state: &SnoozeState) -> Result<()> {
         .with_context(|| format!("Failed to open atomic write file at {}", path.display()))?;
 
     // Write JSON with pretty formatting
-    serde_json::to_writer_pretty(&mut file, state)
-        .context("Failed to serialize snooze state")?;
+    serde_json::to_writer_pretty(&mut file, state).context("Failed to serialize snooze state")?;
 
     // Commit the write atomically
-    file.commit()
-        .context("Failed to save snooze state")?;
+    file.commit().context("Failed to save snooze state")?;
 
     Ok(())
 }
@@ -82,7 +80,10 @@ mod tests {
         let mut state = SnoozeState::new();
         let future = Utc::now() + Duration::hours(2);
         state.snooze("https://github.com/owner/repo/pull/1".to_string(), None);
-        state.snooze("https://github.com/owner/repo/pull/2".to_string(), Some(future));
+        state.snooze(
+            "https://github.com/owner/repo/pull/2".to_string(),
+            Some(future),
+        );
 
         // Save
         save_snooze_state(&temp_path, &state).unwrap();
