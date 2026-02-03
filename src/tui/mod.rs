@@ -233,7 +233,9 @@ fn handle_key_event(app: &mut App, key: KeyEvent) {
         app::InputMode::ScoreBreakdown => {
             match key.code {
                 KeyCode::Esc | KeyCode::Char('d') => app.dismiss_score_breakdown(),
-                _ => {} // Ignore other keys
+                KeyCode::Char('j') | KeyCode::Down => app.next_row(),
+                KeyCode::Char('k') | KeyCode::Up => app.previous_row(),
+                _ => {}
             }
         }
         app::InputMode::Help => {
