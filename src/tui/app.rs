@@ -69,6 +69,7 @@ pub struct App {
 }
 
 impl App {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         active_prs: Vec<(PullRequest, ScoreResult)>,
         snoozed_prs: Vec<(PullRequest, ScoreResult)>,

@@ -32,14 +32,10 @@ impl EventHandler {
             loop {
                 tokio::select! {
                     maybe_event = reader.next() => {
-                        if let Some(Ok(evt)) = maybe_event {
-                            if let crossterm::event::Event::Key(key) = evt {
-                                // Filter for Press only (Windows compatibility)
-                                if key.kind == KeyEventKind::Press {
-                                    if tx.send(Event::Key(key)).is_err() {
-                                        break;
-                                    }
-                                }
+                        if let Some(Ok(crossterm::event::Event::Key(key))) = maybe_event {
+                            // Filter for Press only (Windows compatibility)
+                            if key.kind == KeyEventKind::Press && tx.send(Event::Key(key)).is_err() {
+                                break;
                             }
                         }
                     }

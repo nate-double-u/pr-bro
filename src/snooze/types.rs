@@ -51,6 +51,12 @@ impl SnoozeEntry {
     }
 }
 
+impl Default for SnoozeState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SnoozeState {
     /// Create a new empty snooze state with version 1
     pub fn new() -> Self {

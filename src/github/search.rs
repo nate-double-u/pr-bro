@@ -22,7 +22,7 @@ pub async fn search_prs(client: &Octocrab, query: &str) -> Result<Vec<PullReques
                     .items
                     .into_iter()
                     .filter(|issue| issue.pull_request.is_some()) // Only PRs, not issues
-                    .filter_map(|issue| {
+                    .map(|issue| {
                         // Extract owner/repo from html_url
                         // Format: "https://github.com/owner/repo/pull/123"
                         let path = issue.html_url.path();
@@ -33,7 +33,7 @@ pub async fn search_prs(client: &Octocrab, query: &str) -> Result<Vec<PullReques
                             "unknown/unknown".to_string()
                         };
 
-                        Some(PullRequest {
+                        PullRequest {
                             title: issue.title,
                             number: issue.number,
                             author: issue.user.login.clone(),
@@ -48,7 +48,7 @@ pub async fn search_prs(client: &Octocrab, query: &str) -> Result<Vec<PullReques
                             labels: issue.labels.iter().map(|l| l.name.clone()).collect(),
                             user_has_reviewed: false, // Will be populated by enrichment
                             filtered_size: None, // Will be set by enrich_pr if exclude patterns configured
-                        })
+                        }
                     })
                     .collect();
                 return Ok(prs);
@@ -128,9 +128,9 @@ async fn fetch_pr_reviews(
         .count() as u32;
 
     // Check if authenticated user has reviewed (any review state counts)
-    let user_has_reviewed = auth_username.map_or(false, |username| {
+    let user_has_reviewed = auth_username.is_some_and(|username| {
         reviews.items.iter().any(|r| {
-            r.user.as_ref().map_or(false, |u| u.login.eq_ignore_ascii_case(username))
+            r.user.as_ref().is_some_and(|u| u.login.eq_ignore_ascii_case(username))
         })
     });
 
