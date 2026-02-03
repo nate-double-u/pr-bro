@@ -65,15 +65,15 @@ jobs:
           mkdir -p staging
           cp target/${{ matrix.target }}/release/pr-bro staging/
           cp LICENSE README.md staging/
-          cd staging && tar -czf ../dist/pr-bro-${{ matrix.target }}.tar.gz *
+          cd staging && tar -czf ../dist/pr-bro-${{ github.ref_name }}-${{ matrix.target }}.tar.gz *
 
       - name: Generate checksum
         run: |
           cd dist
           if [ "$RUNNER_OS" = "macOS" ]; then
-            shasum -a 256 pr-bro-${{ matrix.target }}.tar.gz > pr-bro-${{ matrix.target }}.tar.gz.sha256
+            shasum -a 256 pr-bro-${{ github.ref_name }}-${{ matrix.target }}.tar.gz > pr-bro-${{ github.ref_name }}-${{ matrix.target }}.tar.gz.sha256
           else
-            sha256sum pr-bro-${{ matrix.target }}.tar.gz > pr-bro-${{ matrix.target }}.tar.gz.sha256
+            sha256sum pr-bro-${{ github.ref_name }}-${{ matrix.target }}.tar.gz > pr-bro-${{ github.ref_name }}-${{ matrix.target }}.tar.gz.sha256
           fi
 
       - name: Upload release artifacts
@@ -96,6 +96,11 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+
+      - name: Generate combined SHA256SUMS
+        run: |
+          cd dist
+          cat *.sha256 | sort > SHA256SUMS
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
