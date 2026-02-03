@@ -237,6 +237,7 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         let msg_color = if msg.starts_with("Failed") || msg.starts_with("Error") || msg.contains("cancelled") {
             theme::FLASH_ERROR
         } else if msg.starts_with("Snoozed:") || msg.starts_with("Unsnoozed:") ||
+                  msg.starts_with("Re-snoozed:") || msg.starts_with("Undid") ||
                   msg.starts_with("Refreshed") || msg.starts_with("Opened:") {
             theme::FLASH_SUCCESS
         } else {
@@ -277,6 +278,7 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
                 ("j", "/", "k", ":nav "),
                 ("Enter", "", "", ":open "),
                 ("d", "", "", ":detail "),
+                ("s", "", "", ":resnooze "),
                 ("u", "", "", ":unsnooze "),
                 ("r", "", "", ":refresh "),
                 ("Tab", "", "", ":active "),
@@ -513,7 +515,7 @@ fn render_help_popup(frame: &mut Frame) {
         ]),
         Line::from(vec![
             Span::styled("s             ", Style::default().fg(Color::Cyan).bold()),
-            Span::raw("Snooze PR"),
+            Span::raw("Snooze / re-snooze PR"),
         ]),
         Line::from(vec![
             Span::styled("u             ", Style::default().fg(Color::Cyan).bold()),
