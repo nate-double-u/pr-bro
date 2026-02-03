@@ -427,13 +427,16 @@ fn render_snooze_popup(frame: &mut Frame, app: &App) {
             let end = now + chrono::Duration::from_std(*d).unwrap_or_default();
             let days_away = (end.date_naive() - now.date_naive()).num_days();
             let time = end.format("%H:%M");
+            // Days until end of current ISO week (Mon=1..Sun=7)
+            // e.g. Tuesday(2): days_to_week_end = 7 - 2 = 5 (Wed,Thu,Fri,Sat,Sun)
+            let days_to_week_end = 7 - now.weekday().number_from_monday() as i64;
             let date_part = if days_away == 0 {
                 "today".to_string()
             } else if days_away == 1 {
                 "tomorrow".to_string()
-            } else if days_away >= 2 && days_away <= 6 {
+            } else if days_away <= days_to_week_end {
                 format!("this {}", end.format("%A"))
-            } else if days_away >= 7 && days_away <= 13 {
+            } else if days_away <= days_to_week_end + 7 {
                 format!("next {}", end.format("%A"))
             } else if end.year() == now.year() {
                 end.format("%b %-d").to_string()
