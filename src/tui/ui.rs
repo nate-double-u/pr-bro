@@ -151,7 +151,7 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
                 Constraint::Length(16),  // Score + bar
                 Constraint::Fill(1),     // Title
                 Constraint::Length(12),  // Duration: "indefinite" = 10 chars + padding
-                Constraint::Length(30),  // PR ref
+                Constraint::Length(40),  // PR ref
             ];
 
             let header = vec!["#", "Score", "Title", "Duration", "PR"];
@@ -198,7 +198,7 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
                 Constraint::Length(4),   // Index: "99."
                 Constraint::Length(16),  // Score + bar: "12.3k ████░░░░"
                 Constraint::Fill(1),     // Title
-                Constraint::Length(30),  // PR: "owner/repo#123"
+                Constraint::Length(40),  // PR: "owner/repo-name#12345"
             ];
 
             let header = vec!["#", "Score", "Title", "PR"];
