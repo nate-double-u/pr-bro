@@ -109,8 +109,8 @@ async fn fetch_pr_details(
         .await
         .context("Failed to fetch PR details")?;
 
-    let additions = pr.additions.unwrap_or(0) as u64;
-    let deletions = pr.deletions.unwrap_or(0) as u64;
+    let additions = pr.additions.unwrap_or(0);
+    let deletions = pr.deletions.unwrap_or(0);
 
     Ok((additions, deletions))
 }
