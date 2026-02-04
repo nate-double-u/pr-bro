@@ -1,6 +1,6 @@
 # Configuration Reference
 
-This document covers the full configuration options for pr-bro. For a quick-start guide, see the [README](../README.md).
+This document covers the full configuration options for PR Bro. For a quick-start guide, see the [README](../README.md).
 
 Configuration file location: `~/.config/pr-bro/config.yaml`
 
@@ -18,29 +18,30 @@ scoring:
   size:
     exclude: ["*.lock", "package-lock.json"]
     buckets:
-      - range: "<100"
-        effect: "x5"      # Small PRs get 5x multiplier
-      - range: "100-500"
+      - range: "0-9"
+        effect: "x10"     # Extremely small PRs get a huge boost
+      - range: "10-99"
+        effect: "x5"      # Small PRS get a decent boost
+      - range: "100-250"
         effect: "x1"      # Medium PRs: no change
-      - range: ">500"
-        effect: "x0.5"    # Large PRs get 0.5x penalty
+      - range: "250-499"
+        effect: "x0.5"    # Large PRs get a decent penalty
+      - range: ">=500"
+        effect: "x0.25"   # Extremely large PRs get a huge penalty
   labels:
-    - name: "urgent"
-      effect: "+10"
+    - name: "highest priority"
+      effect: "x10"
     - name: "wip"
       effect: "x0.5"
-  previously_reviewed: "x0.5"
+  previously_reviewed: "x2.5"  # Previously reviewed PRs get a boost
 
 # Queries to execute (at least one required)
 queries:
-  - name: my-reviews
-    query: "is:pr review-requested:@me"
-
-  - name: team-prs
-    query: "is:pr org:myorg"
+  - name: "foo/bar PRs needing my attention"
+    query: "is:pr is:open review-requested:@me repository:foo/bar"
     scoring:               # Per-query scoring (merges with global)
       base_score: 50
-      age: "+2 per 1h"
+      age: "x1.5 per 1d"  # Gets a x1.5 boost per day of age
       approvals: "+5 per 1"
 ```
 
@@ -105,8 +106,8 @@ size:
 
 **Exclude pattern behavior:**
 - Patterns match against the **filename only** (basename), not the full file path. For example, `*.lock` will match `Cargo.lock` and `subdir/package-lock.json`.
-- When exclude patterns are configured, pr-bro fetches per-file diff data from the GitHub API to determine which files to exclude. This adds 1-2 API calls per PR (paginated at 100 files per page).
-- If the per-file data fetch fails (e.g., rate limit), pr-bro falls back to the aggregate size from the PR summary (no exclusions applied).
+- When exclude patterns are configured, PR Bro fetches per-file diff data from the GitHub API to determine which files to exclude. This adds 1-2 API calls per PR (paginated at 100 files per page).
+- If the per-file data fetch fails (e.g., rate limit), PR Bro falls back to the aggregate size from the PR summary (no exclusions applied).
 - Without exclude patterns, no extra API calls are made.
 - Invalid glob patterns are caught at startup during config validation.
 
@@ -130,19 +131,15 @@ Each matching label appears as a separate entry in the score breakdown detail vi
 
 ### Previously Reviewed
 
-Optional. Applies a score effect when the authenticated user (the user whose token is configured) has previously submitted a review on the PR. This includes all review states: approved, changes requested, commented, or dismissed.
+Optional. Applies a score effect when the authenticated user (the user whose token is configured) has previously submitted a review on the PR.
+
+If your team is using review requests via GitHub to ask for reviews when a PR is ready to review, this configuration plays well with it, as you can then use `review-requested:@me` filter in the GitHub query to fetch PRs needing your review.
+
+That workflow, paired with this configuration, means that when they need you to re-review such a PR, you could prioritize it using
 
 ```yaml
-previously_reviewed: "x0.5"   # De-prioritize already-reviewed PRs
+previously_reviewed: "x2.5"   # Prioritize already-reviewed PRs
 ```
-
-Or to boost PRs you've already engaged with:
-
-```yaml
-previously_reviewed: "+20"    # Boost PRs you've reviewed before
-```
-
-Detection uses the GitHub reviews API data that is already fetched for approval counting — no extra API calls. The authenticated username is fetched once at startup.
 
 ## Effect Syntax Summary
 
@@ -209,11 +206,11 @@ In this example, the "urgent" query:
 
 ### YAML Merge Keys
 
-YAML merge keys (`<<:`) are supported by the YAML parser for reducing duplication within your config file. This is a YAML feature processed when reading the file, independent of the runtime merge that combines global and per-query scoring. Note that because pr-bro validates config structure strictly (`deny_unknown_fields`), YAML anchors must be placed inside fields that expect the anchored structure, not at the top level. For advanced YAML anchor/merge-key usage, refer to the [YAML specification](https://yaml.org/type/merge.html).
+YAML merge keys (`<<:`) are supported by the YAML parser for reducing duplication within your config file. This is a YAML feature processed when reading the file, independent of the runtime merge that combines global and per-query scoring. Note that because PR Bro validates config structure strictly (`deny_unknown_fields`), YAML anchors must be placed inside fields that expect the anchored structure, not at the top level. For advanced YAML anchor/merge-key usage, refer to the [YAML specification](https://yaml.org/type/merge.html).
 
 ## Config Validation
 
-pr-bro validates your configuration at startup with clear error messages:
+PR Bro validates your configuration at startup with clear error messages:
 
 - **Unknown YAML keys** are rejected (catches typos like `approvalls` instead of `approvals`)
 - **Overlapping size bucket ranges** are rejected (prevents ambiguous scoring)
