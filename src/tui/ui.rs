@@ -2,6 +2,7 @@ use crate::tui::app::{App, InputMode, View};
 use crate::tui::theme;
 use crate::version_check::VersionStatus;
 use chrono::{Datelike, Local};
+use ratatui::layout::Margin;
 use ratatui::prelude::*;
 use ratatui::widgets::{
     Block, Cell, Clear, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table,
@@ -665,7 +666,7 @@ fn render_score_breakdown_popup(frame: &mut Frame, app: &App) {
     let content_height = 4 + factor_lines + 3;
     let popup_height = (content_height as u16).min(frame.area().height.saturating_sub(2));
 
-    let popup_area = centered_rect_fixed(55, popup_height, frame.area());
+    let popup_area = centered_rect_fixed(57, popup_height + 2, frame.area());
 
     // Clear the background
     frame.render_widget(Clear, popup_area);
@@ -680,6 +681,10 @@ fn render_score_breakdown_popup(frame: &mut Frame, app: &App) {
 
     // Get inner area (inside the border)
     let inner = block.inner(popup_area);
+    let inner = inner.inner(Margin {
+        horizontal: 1,
+        vertical: 1,
+    });
 
     // Build content lines
     let mut lines = Vec::new();
