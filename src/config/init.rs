@@ -209,6 +209,22 @@ pub fn run_init_wizard(default_path: Option<PathBuf>) -> Result<()> {
             }
         };
 
+        // Draft
+        println!();
+        typewriter("Draft PRs aren't ready for review yet. You can deprioritize them.");
+        typewriter("Use 'x0.1' to heavily deprioritize, or 'x0.5' for a lighter penalty.");
+        typewriter("Use 'none' to skip this factor entirely.");
+        let draft = loop {
+            let input = prompt_with_default("Draft factor (e.g., x0.1 to deprioritize)", "none")?;
+            if input == "none" || input.is_empty() {
+                break None;
+            }
+            match Effect::parse(&input) {
+                Ok(_) => break Some(input),
+                Err(e) => println!("  Invalid: {}. Try again.", e),
+            }
+        };
+
         // Labels
         println!();
         typewriter("Labels let you boost or penalize PRs based on GitHub labels.");
@@ -252,6 +268,7 @@ pub fn run_init_wizard(default_path: Option<PathBuf>) -> Result<()> {
             size,
             labels,
             previously_reviewed,
+            draft,
         }
     } else {
         ScoringConfig::default()

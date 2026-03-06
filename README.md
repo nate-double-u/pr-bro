@@ -61,7 +61,7 @@ Use `pr-bro --help` for all command-line options. Press `?` in the TUI for keybo
 
 ## Features
 
-**Weighted scoring** calculates a single priority number for each PR based on age, approval count, size, labels, and whether you've reviewed it before, all based on your preferences/configuration. Each parameter can be used to boost or penalize PRs score in any way you see fit.
+**Weighted scoring** calculates a single priority number for each PR based on age, approval count, size, labels, draft status, and whether you've reviewed it before, all based on your preferences/configuration. Each parameter can be used to boost or penalize PRs score in any way you see fit.
 
 **Interactive TUI** shows all PRs sorted by score. Navigate with arrow keys or vim bindings. Press `b` to see the score breakdown for any PR. Press `r` to refresh.
 

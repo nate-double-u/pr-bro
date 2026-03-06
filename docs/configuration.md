@@ -37,6 +37,7 @@ scoring:
     - name: "wip"
       effect: "x0.5"
   previously_reviewed: "x2.5"  # Previously reviewed PRs get a boost
+  draft: "x0.1"               # Deprioritize draft PRs
 
 # Queries to execute (at least one required)
 queries:
@@ -144,6 +145,14 @@ That workflow, paired with this configuration, means that when they need you to 
 previously_reviewed: "x2.5"   # Prioritize already-reviewed PRs
 ```
 
+### Draft
+
+Optional. Applies a score effect when a PR is marked as a draft. Useful for deprioritizing PRs that aren't ready for review yet.
+
+```yaml
+draft: "x0.1"   # Heavily deprioritize draft PRs
+```
+
 ## Effect Syntax Summary
 
 | Syntax | Meaning |
@@ -155,7 +164,7 @@ previously_reviewed: "x2.5"   # Prioritize already-reviewed PRs
 | `+N per M` | Add N points per M units (approvals only) |
 | `xN per M` | Multiply by N per M units (approvals only) |
 
-Labels and previously_reviewed use flat effects (`+N` or `xN`), not per-unit effects.
+Labels, previously_reviewed, and draft use flat effects (`+N` or `xN`), not per-unit effects.
 
 ## Per-Query Scoring
 
@@ -205,7 +214,7 @@ In this example, the "urgent" query:
 - **Overrides** `age` to `"+10 per 1h"` (urgent PRs age faster).
 - **Adds** `size.exclude` with `["*.lock"]`. Because merging is leaf-level, global `size.buckets` are inherited — setting `size.exclude` does NOT replace the entire `size` block.
 - **Overrides** the "urgent" label effect from `"+20"` to `"+50"`. Labels merge by name (case-insensitive): the query's "urgent" label wins over the global one. The global "wip" label is preserved because the query does not mention it.
-- **Inherits** `base_score`, `approvals`, and `previously_reviewed` from the global config (not specified in the query, so global values apply).
+- **Inherits** `base_score`, `approvals`, `previously_reviewed`, and `draft` from the global config (not specified in the query, so global values apply).
 
 ### YAML Merge Keys
 
@@ -232,6 +241,6 @@ PR Bro validates your configuration at startup with clear error messages:
 - **Invalid effect syntax** is caught with helpful messages
 - **Empty label names** are rejected
 - **Invalid glob patterns** in `size.exclude` are caught (e.g., unclosed character classes like `[invalid`)
-- **Invalid label effects** and **invalid previously_reviewed effects** are caught at startup
+- **Invalid label effects**, **invalid previously_reviewed effects**, and **invalid draft effects** are caught at startup
 
 Validation errors will show exactly what's wrong and where, so you can fix configuration issues quickly.
