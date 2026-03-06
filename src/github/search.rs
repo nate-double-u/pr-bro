@@ -57,7 +57,7 @@ pub async fn search_prs(client: &Octocrab, query: &str) -> Result<Vec<PullReques
                             additions: 0, // Search API doesn't include these
                             deletions: 0, // Will be populated by enrichment
                             approvals: 0, // Requires separate API call
-                            draft: false, // Search API doesn't expose draft status reliably
+                            draft: false, // Populated during enrichment from Pulls API
                             labels: issue.labels.iter().map(|l| l.name.clone()).collect(),
                             user_has_reviewed: false, // Will be populated by enrichment
                             filtered_size: None, // Will be set by enrich_pr if exclude patterns configured
@@ -115,7 +115,7 @@ async fn fetch_pr_details(
     owner: &str,
     repo: &str,
     number: u64,
-) -> Result<(u64, u64)> {
+) -> Result<(u64, u64, bool)> {
     let pr = client
         .pulls(owner, repo)
         .get(number)
@@ -124,8 +124,9 @@ async fn fetch_pr_details(
 
     let additions = pr.additions.unwrap_or(0);
     let deletions = pr.deletions.unwrap_or(0);
+    let draft = pr.draft.unwrap_or(false);
 
-    Ok((additions, deletions))
+    Ok((additions, deletions, draft))
 }
 
 /// Fetch PR review count (approved reviews) and check if authenticated user has reviewed
@@ -233,9 +234,10 @@ async fn enrich_pr(
     let reviews_fut = fetch_pr_reviews(client, owner, repo_name, pr.number, auth_username);
 
     match tokio::try_join!(details_fut, reviews_fut) {
-        Ok(((additions, deletions), (approvals, user_has_reviewed))) => {
+        Ok(((additions, deletions, draft), (approvals, user_has_reviewed))) => {
             pr.additions = additions;
             pr.deletions = deletions;
+            pr.draft = draft;
             pr.approvals = approvals;
             pr.user_has_reviewed = user_has_reviewed;
 
