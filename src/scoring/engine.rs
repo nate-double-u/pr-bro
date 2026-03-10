@@ -148,6 +148,22 @@ pub fn calculate_score(pr: &PullRequest, config: &ScoringConfig) -> ScoreResult 
         }
     }
 
+    // Apply draft factor
+    if let Some(ref draft_effect_str) = config.draft {
+        if pr.draft {
+            if let Ok(effect) = Effect::parse(draft_effect_str) {
+                let before = score;
+                score = effect.apply(score, 1);
+                factors.push(FactorContribution {
+                    label: "Draft".to_string(),
+                    description: format!("PR is a draft -> {}", draft_effect_str),
+                    before,
+                    after: score,
+                });
+            }
+        }
+    }
+
     // Floor at zero
     ScoreResult {
         score: score.max(0.0),
@@ -251,6 +267,7 @@ mod tests {
                 size: None,
                 labels: None,
                 previously_reviewed: None,
+                draft: None,
             },
         );
         assert_eq!(result.score, 100.0);
@@ -269,6 +286,7 @@ mod tests {
                 size: None,
                 labels: None,
                 previously_reviewed: None,
+                draft: None,
             },
         );
         assert_eq!(result.score, 105.0); // 100 + 5*1
@@ -286,6 +304,7 @@ mod tests {
                 size: None,
                 labels: None,
                 previously_reviewed: None,
+                draft: None,
             },
         );
         assert_eq!(result.score, 0.0);
@@ -303,6 +322,7 @@ mod tests {
                 size: None,
                 labels: None,
                 previously_reviewed: None,
+                draft: None,
             },
         );
         assert_eq!(result.score, 50.0);
@@ -326,6 +346,7 @@ mod tests {
                 }),
                 labels: None,
                 previously_reviewed: None,
+                draft: None,
             },
         );
         assert_eq!(result.score, 200.0);
@@ -355,6 +376,7 @@ mod tests {
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
 
         let result = calculate_score(&pr, &config);
@@ -385,6 +407,7 @@ mod tests {
             size: None,
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
 
         let result = calculate_score(&pr, &config);
@@ -415,6 +438,7 @@ mod tests {
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
 
         let result = calculate_score(&pr, &config);
@@ -436,6 +460,7 @@ mod tests {
                 effect: "+10".to_string(),
             }]),
             previously_reviewed: None,
+            draft: None,
         };
 
         let result = calculate_score(&pr, &config);
@@ -457,6 +482,7 @@ mod tests {
                 effect: "x0.5".to_string(),
             }]),
             previously_reviewed: None,
+            draft: None,
         };
 
         let result = calculate_score(&pr, &config);
@@ -480,6 +506,7 @@ mod tests {
                 }, // lowercase
             ]),
             previously_reviewed: None,
+            draft: None,
         };
 
         let result = calculate_score(&pr, &config);
@@ -507,6 +534,7 @@ mod tests {
                 },
             ]),
             previously_reviewed: None,
+            draft: None,
         };
 
         let result = calculate_score(&pr, &config);
@@ -529,6 +557,7 @@ mod tests {
                 effect: "+10".to_string(),
             }]),
             previously_reviewed: None,
+            draft: None,
         };
 
         let result = calculate_score(&pr, &config);
@@ -547,6 +576,7 @@ mod tests {
             size: None,
             labels: None,
             previously_reviewed: Some("x0.5".to_string()),
+            draft: None,
         };
 
         let result = calculate_score(&pr, &config);
@@ -565,6 +595,7 @@ mod tests {
             size: None,
             labels: None,
             previously_reviewed: Some("x0.5".to_string()),
+            draft: None,
         };
 
         let result = calculate_score(&pr, &config);
@@ -595,6 +626,7 @@ mod tests {
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
 
         let result = calculate_score(&pr, &config);
@@ -624,11 +656,50 @@ mod tests {
                 effect: "+20".to_string(),
             }]),
             previously_reviewed: Some("x0.5".to_string()),
+            draft: None,
         };
 
         let result = calculate_score(&pr, &config);
         // (100 + 5 + 20) * 2 + 20 = 270
         // Wait, order: base=100, age=+5 (105), approvals=+20 (125), size=x2 (250), labels=+20 (270), previously_reviewed not applied (false)
         assert_eq!(result.score, 270.0);
+    }
+
+    #[test]
+    fn test_draft_applies() {
+        let mut pr = sample_pr(1, 0, 100);
+        pr.draft = true;
+
+        let config = ScoringConfig {
+            base_score: Some(100.0),
+            age: None,
+            approvals: None,
+            size: None,
+            labels: None,
+            previously_reviewed: None,
+            draft: Some("x0.1".to_string()),
+        };
+
+        let result = calculate_score(&pr, &config);
+        assert!((result.score - 10.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_draft_not_applied_when_not_draft() {
+        let mut pr = sample_pr(1, 0, 100);
+        pr.draft = false;
+
+        let config = ScoringConfig {
+            base_score: Some(100.0),
+            age: None,
+            approvals: None,
+            size: None,
+            labels: None,
+            previously_reviewed: None,
+            draft: Some("x0.1".to_string()),
+        };
+
+        let result = calculate_score(&pr, &config);
+        assert_eq!(result.score, 100.0);
     }
 }

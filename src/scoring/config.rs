@@ -68,6 +68,11 @@ pub struct ScoringConfig {
     /// Example: "x0.5" to deprioritize previously-reviewed PRs
     #[serde(default)]
     pub previously_reviewed: Option<String>,
+
+    /// Draft factor: effect applied when PR is a draft
+    /// Example: "x0.1" to deprioritize draft PRs
+    #[serde(default)]
+    pub draft: Option<String>,
 }
 
 impl Default for ScoringConfig {
@@ -95,6 +100,7 @@ impl Default for ScoringConfig {
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         }
     }
 }
@@ -121,6 +127,7 @@ pub fn merge_scoring_configs(
             .previously_reviewed
             .clone()
             .or_else(|| global.previously_reviewed.clone()),
+        draft: query.draft.clone().or_else(|| global.draft.clone()),
     }
 }
 
@@ -328,6 +335,15 @@ previously_reviewed: "x0.5"
     }
 
     #[test]
+    fn test_draft_config_parse() {
+        let yaml = r#"
+draft: "x0.1"
+"#;
+        let config: ScoringConfig = serde_saphyr::from_str(yaml).unwrap();
+        assert_eq!(config.draft, Some("x0.1".to_string()));
+    }
+
+    #[test]
     fn test_full_config_with_all_factors() {
         let yaml = r#"
 base_score: 100
@@ -341,6 +357,7 @@ labels:
   - name: "urgent"
     effect: "+20"
 previously_reviewed: "x0.5"
+draft: "x0.1"
 "#;
         let config: ScoringConfig = serde_saphyr::from_str(yaml).unwrap();
         assert_eq!(config.base_score, Some(100.0));
@@ -349,6 +366,7 @@ previously_reviewed: "x0.5"
         assert!(config.size.is_some());
         assert_eq!(config.labels.as_ref().unwrap().len(), 1);
         assert_eq!(config.previously_reviewed, Some("x0.5".to_string()));
+        assert_eq!(config.draft, Some("x0.1".to_string()));
     }
 
     // --- Merge function tests ---
@@ -378,6 +396,7 @@ previously_reviewed: "x0.5"
                 effect: "+10".to_string(),
             }]),
             previously_reviewed: Some("x0.5".to_string()),
+            draft: None,
         };
 
         // Query only sets age — everything else should come from global
@@ -388,6 +407,7 @@ previously_reviewed: "x0.5"
             size: None,
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
 
         let result = merge_scoring_configs(&global, Some(&query));
@@ -412,6 +432,7 @@ previously_reviewed: "x0.5"
             size: None,
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
 
         let query = ScoringConfig {
@@ -421,6 +442,7 @@ previously_reviewed: "x0.5"
             size: None,
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
 
         let result = merge_scoring_configs(&global, Some(&query));
@@ -443,6 +465,7 @@ previously_reviewed: "x0.5"
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
 
         // Query has size with new buckets but no exclude
@@ -459,6 +482,7 @@ previously_reviewed: "x0.5"
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
 
         let result = merge_scoring_configs(&global, Some(&query));
@@ -486,6 +510,7 @@ previously_reviewed: "x0.5"
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
 
         // Query has size with absent buckets (None = inherit)
@@ -499,6 +524,7 @@ previously_reviewed: "x0.5"
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
 
         let result = merge_scoring_configs(&global, Some(&query));
@@ -521,6 +547,7 @@ previously_reviewed: "x0.5"
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
 
         let query = ScoringConfig {
@@ -533,6 +560,7 @@ previously_reviewed: "x0.5"
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
 
         let result = merge_scoring_configs(&global, Some(&query));
@@ -553,6 +581,7 @@ previously_reviewed: "x0.5"
             size: None,
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
 
         let result = merge_scoring_configs(&global, Some(&query));
@@ -578,6 +607,7 @@ previously_reviewed: "x0.5"
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
 
         let query = ScoringConfig {
@@ -590,6 +620,7 @@ previously_reviewed: "x0.5"
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
 
         let result = merge_scoring_configs(&global, Some(&query));
@@ -615,6 +646,7 @@ previously_reviewed: "x0.5"
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
 
         let query = ScoringConfig {
@@ -630,6 +662,7 @@ previously_reviewed: "x0.5"
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
 
         let result = merge_scoring_configs(&global, Some(&query));
@@ -656,6 +689,7 @@ previously_reviewed: "x0.5"
                 effect: "x3".to_string(),
             }]),
             previously_reviewed: None,
+            draft: None,
         };
 
         let query = ScoringConfig {
@@ -668,6 +702,7 @@ previously_reviewed: "x0.5"
                 effect: "x2".to_string(),
             }]),
             previously_reviewed: None,
+            draft: None,
         };
 
         let result = merge_scoring_configs(&global, Some(&query));
@@ -695,6 +730,7 @@ previously_reviewed: "x0.5"
                 },
             ]),
             previously_reviewed: None,
+            draft: None,
         };
 
         let query = ScoringConfig {
@@ -707,6 +743,7 @@ previously_reviewed: "x0.5"
                 effect: "+20".to_string(),
             }]),
             previously_reviewed: None,
+            draft: None,
         };
 
         let result = merge_scoring_configs(&global, Some(&query));
@@ -731,6 +768,7 @@ previously_reviewed: "x0.5"
                 effect: "+10".to_string(),
             }]),
             previously_reviewed: None,
+            draft: None,
         };
 
         let query = ScoringConfig {
@@ -743,6 +781,7 @@ previously_reviewed: "x0.5"
                 effect: "+20".to_string(),
             }]),
             previously_reviewed: None,
+            draft: None,
         };
 
         let result = merge_scoring_configs(&global, Some(&query));
@@ -762,6 +801,7 @@ previously_reviewed: "x0.5"
             size: None,
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
 
         let query = ScoringConfig {
@@ -774,6 +814,7 @@ previously_reviewed: "x0.5"
                 effect: "+5".to_string(),
             }]),
             previously_reviewed: None,
+            draft: None,
         };
 
         let result = merge_scoring_configs(&global, Some(&query));
@@ -794,6 +835,7 @@ previously_reviewed: "x0.5"
                 effect: "+10".to_string(),
             }]),
             previously_reviewed: None,
+            draft: None,
         };
 
         let query = ScoringConfig {
@@ -803,6 +845,7 @@ previously_reviewed: "x0.5"
             size: None,
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
 
         let result = merge_scoring_configs(&global, Some(&query));

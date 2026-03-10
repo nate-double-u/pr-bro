@@ -106,6 +106,13 @@ pub fn validate_scoring(config: &ScoringConfig) -> Result<(), Vec<String>> {
         }
     }
 
+    // Validate draft effect
+    if let Some(ref draft) = config.draft {
+        if let Err(e) = Effect::parse(draft) {
+            errors.push(format!("scoring.draft: invalid '{}' - {}", draft, e));
+        }
+    }
+
     if errors.is_empty() {
         Ok(())
     } else {
@@ -186,6 +193,7 @@ mod tests {
             size: None,
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
         assert!(validate_scoring(&config).is_ok());
     }
@@ -199,6 +207,7 @@ mod tests {
             size: None,
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
         assert!(validate_scoring(&config).is_ok());
     }
@@ -212,6 +221,7 @@ mod tests {
             size: None,
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
@@ -228,6 +238,7 @@ mod tests {
             size: None,
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
@@ -244,6 +255,7 @@ mod tests {
             size: None,
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
@@ -266,6 +278,7 @@ mod tests {
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
@@ -282,6 +295,7 @@ mod tests {
             size: None,
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
@@ -322,6 +336,7 @@ mod tests {
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
         assert!(validate_scoring(&config).is_ok());
     }
@@ -347,6 +362,7 @@ mod tests {
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
@@ -377,6 +393,7 @@ mod tests {
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
@@ -405,6 +422,7 @@ mod tests {
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
         assert!(validate_scoring(&config).is_ok());
     }
@@ -430,6 +448,7 @@ mod tests {
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
@@ -458,6 +477,7 @@ mod tests {
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
@@ -486,6 +506,7 @@ mod tests {
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
         assert!(validate_scoring(&config).is_ok());
     }
@@ -508,6 +529,7 @@ mod tests {
                 },
             ]),
             previously_reviewed: None,
+            draft: None,
         };
         assert!(validate_scoring(&config).is_ok());
     }
@@ -524,6 +546,7 @@ mod tests {
                 effect: "bad".to_string(),
             }]),
             previously_reviewed: None,
+            draft: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
@@ -544,6 +567,7 @@ mod tests {
                 effect: "+10".to_string(),
             }]),
             previously_reviewed: None,
+            draft: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
@@ -561,6 +585,7 @@ mod tests {
             size: None,
             labels: None,
             previously_reviewed: Some("x0.5".to_string()),
+            draft: None,
         };
         assert!(validate_scoring(&config).is_ok());
     }
@@ -574,6 +599,7 @@ mod tests {
             size: None,
             labels: None,
             previously_reviewed: Some("invalid".to_string()),
+            draft: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
@@ -597,6 +623,7 @@ mod tests {
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
         assert!(validate_scoring(&config).is_ok());
     }
@@ -616,6 +643,7 @@ mod tests {
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
@@ -639,6 +667,7 @@ mod tests {
             }),
             labels: None,
             previously_reviewed: None,
+            draft: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
@@ -662,6 +691,7 @@ mod tests {
                 }, // Error 3 & 4
             ]),
             previously_reviewed: Some("invalid".to_string()), // Error 5
+            draft: None,
         };
         let result = validate_scoring(&config);
         assert!(result.is_err());
